@@ -46,33 +46,28 @@ async def process_movie_recap(video: UploadFile = File(...), api_key: str = Form
 
         prompt = f"""
         You are a professional Burmese Movie Recap YouTuber.
-        Analyze this video and write an exciting storytelling script in Burmese (Myanmar language).
-        Rules:
-        - The video duration is {duration} seconds.
-        - Ensure the speaking time of the script matches the video length closely.
-        - Tone: Engaging, fast-paced, and catchy.
-        - Focus on explaining the plot points shown in the video.
+        Analyze this video and write an exciting storytelling script in Burmese.
+        Video duration is {duration} seconds.
+        Tone: Engaging, fast-paced, and catchy.
         """
 
         response = model.generate_content([video_file_ai, prompt])
         script_text = response.text
 
         # ၄။ မြန်မာအသံ (TTS) ထုတ်လုပ်ခြင်း
-        # "my-MM-ThihaNeural" (Male) သို့မဟုတ် "my-MM-NilarNeural" (Female)
         voice = "my-MM-ThihaNeural"
         communicate = edge_tts.Communicate(script_text, voice)
         await communicate.save(audio_out_path)
 
-        # ၅။ ဗီဒီယိုနှင့် အသံကို ပေါင်းစပ်ခြင်း (မူရင်းအသံဖျောက်ခြင်း)
+        # ၅။ ဗီဒီယိုနှင့် အသံကို ပေါင်းစပ်ခြင်း
         new_audio = AudioFileClip(audio_out_path)
         
-        # အသံက ဗီဒီယိုထက် ရှည်နေလျှင် ဖြတ်တောက်ပစ်ခြင်း
         if new_audio.duration > clip.duration:
             new_audio = new_audio.subclip(0, clip.duration)
 
         final_clip = clip.set_audio(new_audio)
         
-        # Render Free Tier အတွက် Memory သက်သာစေရန် preset="ultrafast" သုံးပါသည်
+        # Render Free Tier အတွက် preset="ultrafast" သုံးပါသည်
         final_clip.write_videofile(
             video_out_path, 
             codec="libx264", 
@@ -82,12 +77,16 @@ async def process_movie_recap(video: UploadFile = File(...), api_key: str = Form
             preset="ultrafast"
         )
 
-        # ဖိုင်များကို ပိတ်ခြင်း (Memory ပြန်လွှတ်ရန်)
         clip.close()
         new_audio.close()
 
-        # ၆။ အချောသတ်ဗီဒီယိုကို Flutter ဆီ ပြန်ပို့ခြင်း
+        # ၆။ အချောသတ်ဗီဒီယိုကို ပို့ပေးခြင်း
         return FileResponse(
             video_out_path, 
             media_type="video/mp4", 
             filename=f"recap_{video.filename}"
+        )
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPExceptio
