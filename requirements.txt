@@ -2,8 +2,4 @@ fastapi
 uvicorn
 google-generativeai
 edge-tts
-moviepy==1.0.3
 python-multipart
-imageio==2.25.1
-imageio-ffmpeg
-proglog
