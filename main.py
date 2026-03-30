@@ -1,81 +1,93 @@
 import os
 import uuid
+import time
 import asyncio
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 import google.generativeai as genai
 import edge_tts
 from moviepy.editor import VideoFileClip, AudioFileClip
 
 app = FastAPI()
 
-# Folder များ
-UPLOAD_DIR = "uploads"
-OUTPUT_DIR = "outputs"
-for d in [UPLOAD_DIR, OUTPUT_DIR]:
-    if not os.path.exists(d): os.makedirs(d)
+# Render လိုမျိုး Cloud ပေါ်မှာ ဖိုင်သိမ်းဖို့ /tmp folder ကို သုံးရပါမယ်
+TEMP_DIR = "/tmp"
+
+@app.get("/")
+def home():
+    return {"message": "Movie Recap API is running!"}
 
 @app.post("/process-movie-recap")
 async def process_movie_recap(video: UploadFile = File(...), api_key: str = Form(...)):
-    video_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}_{video.filename}")
-    audio_path = os.path.join(OUTPUT_DIR, f"{uuid.uuid4()}.mp3")
-    final_video_path = os.path.join(OUTPUT_DIR, f"recap_{video.filename}")
+    # ဖိုင်နာမည်များကို Unique ဖြစ်အောင် သတ်မှတ်ခြင်း
+    unique_id = str(uuid.uuid4())
+    video_in_path = os.path.join(TEMP_DIR, f"{unique_id}_in.mp4")
+    audio_out_path = os.path.join(TEMP_DIR, f"{unique_id}_voice.mp3")
+    video_out_path = os.path.join(TEMP_DIR, f"{unique_id}_final.mp4")
 
     try:
-        # ၁။ ဗီဒီယိုကို သိမ်းဆည်းခြင်း
-        content = await video.read()
-        with open(video_path, "wb") as f:
-            f.write(content)
+        # ၁။ ပေးပို့လိုက်သော ဗီဒီယိုကို ခေတ္တသိမ်းဆည်းခြင်း
+        with open(video_in_path, "wb") as f:
+            f.write(await video.read())
 
         # ၂။ ဗီဒီယို ကြာချိန်ကို စစ်ဆေးခြင်း
-        clip = VideoFileClip(video_path)
-        duration_seconds = clip.duration
+        clip = VideoFileClip(video_in_path)
+        duration = clip.duration
 
-        # ၃။ Gemini AI နဲ့ ဇာတ်ညွှန်းရေးခြင်း
+        # ၃။ Gemini AI နဲ့ မြန်မာဇာတ်ညွှန်းရေးခြင်း
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
-        video_file_ai = genai.upload_file(path=video_path)
-        
-        # ဗီဒီယိုကြာချိန်နဲ့ အသံဖတ်ချိန် ကိုက်ညီအောင် Prompt ပေးခြင်း
-        prompt = f"""
-        ဒီဗီဒီယိုကိုကြည့်ပြီး စိတ်လှုပ်ရှားစရာ မြန်မာ Movie Recap ရေးပေးပါ။
-        ဗီဒီယိုကြာချိန်က {duration_seconds} စက္ကန့် ဖြစ်ပါတယ်။ 
-        စာဖတ်ချိန်ဟာ {duration_seconds} စက္ကန့်ထက် မကျော်စေနဲ့။ 
-        မူရင်းအသံနေရာမှာ အစားထိုးမှာဖြစ်လို့ စကားလုံးအရေအတွက်ကို အတိအကျချိန်ညှိပေးပါ။
-        """
 
-        import time
+        # ဗီဒီယိုကို Gemini ဆီ တင်ခြင်း
+        video_file_ai = genai.upload_file(path=video_in_path)
         while video_file_ai.state.name == "PROCESSING":
             time.sleep(2)
             video_file_ai = genai.get_file(video_file_ai.name)
+
+        prompt = f"""
+        You are a professional Burmese Movie Recap YouTuber.
+        Analyze this video and write an exciting storytelling script in Burmese (Myanmar language).
+        Rules:
+        - The video duration is {duration} seconds.
+        - Ensure the speaking time of the script matches the video length closely.
+        - Tone: Engaging, fast-paced, and catchy.
+        - Focus on explaining the plot points shown in the video.
+        """
 
         response = model.generate_content([video_file_ai, prompt])
         script_text = response.text
 
         # ၄။ မြန်မာအသံ (TTS) ထုတ်လုပ်ခြင်း
+        # "my-MM-ThihaNeural" (Male) သို့မဟုတ် "my-MM-NilarNeural" (Female)
         voice = "my-MM-ThihaNeural"
         communicate = edge_tts.Communicate(script_text, voice)
-        await communicate.save(audio_path)
+        await communicate.save(audio_out_path)
 
-        # ၅။ ဗီဒီယိုထဲသို့ အသံအသစ်ထည့်ခြင်း (မူရင်းအသံဖျောက်ခြင်း)
-        new_audio = AudioFileClip(audio_path)
-        # အသံက ဗီဒီယိုထက် ရှည်နေရင် ဗီဒီယိုကြာချိန်အထိပဲ ဖြတ်မယ်
+        # ၅။ ဗီဒီယိုနှင့် အသံကို ပေါင်းစပ်ခြင်း (မူရင်းအသံဖျောက်ခြင်း)
+        new_audio = AudioFileClip(audio_out_path)
+        
+        # အသံက ဗီဒီယိုထက် ရှည်နေလျှင် ဖြတ်တောက်ပစ်ခြင်း
         if new_audio.duration > clip.duration:
             new_audio = new_audio.subclip(0, clip.duration)
-            
-        final_clip = clip.set_audio(new_audio)
-        final_clip.write_videofile(final_video_path, codec="libx264", audio_codec="aac")
 
-        # Cleanup: မလိုအပ်တဲ့ဖိုင်တွေဖျက်မယ်
+        final_clip = clip.set_audio(new_audio)
+        
+        # Render Free Tier အတွက် Memory သက်သာစေရန် preset="ultrafast" သုံးပါသည်
+        final_clip.write_videofile(
+            video_out_path, 
+            codec="libx264", 
+            audio_codec="aac", 
+            temp_audiofile=os.path.join(TEMP_DIR, f"{unique_id}_temp.m4a"),
+            remove_temp=True,
+            preset="ultrafast"
+        )
+
+        # ဖိုင်များကို ပိတ်ခြင်း (Memory ပြန်လွှတ်ရန်)
         clip.close()
         new_audio.close()
-        os.remove(video_path)
-        os.remove(audio_path)
 
-        return FileResponse(final_video_path, media_type="video/mp4", filename=f"recap_{video.filename}")
-
-    except Exception as e:
-        return {"error": str(e)}
-
-# Run: uvicorn main:app --host 0.0.0.0 --port 8000
+        # ၆။ အချောသတ်ဗီဒီယိုကို Flutter ဆီ ပြန်ပို့ခြင်း
+        return FileResponse(
+            video_out_path, 
+            media_type="video/mp4", 
+            filename=f"recap_{video.filename}"
