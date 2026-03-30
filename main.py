@@ -1,85 +1,98 @@
-import os
-import uuid
-import time
-import asyncio
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+import streamlit as st
 import google.generativeai as genai
 import edge_tts
+import asyncio
+import os
 
-app = FastAPI()
+# Page Settings
+st.set_page_config(page_title="Burmese Movie Recap AI", page_icon="🎬")
 
-# Render Cloud ပေါ်တွင် /tmp folder ကိုသာ သုံးရပါမည်
-TEMP_DIR = "/tmp"
+# Custom CSS for UI
+st.markdown("""
+    <style>
+    .main { background-color: #f0f2f6; }
+    .stButton>button { width: 100%; border-radius: 10px; background-color: #e63946; color: white; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# အသံဖိုင်များကို URL ဖြင့် လှမ်းခေါ်နိုင်ရန် Static Folder သတ်မှတ်ခြင်း
-app.mount("/static", StaticFiles(directory=TEMP_DIR), name="static")
+# Sidebar - Settings
+with st.sidebar:
+    st.title("⚙️ Settings")
+    api_key = st.text_input("Gemini API Key ကိုထည့်ပါ", type="password")
+    voice_type = st.selectbox("အသံရွေးချယ်ပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
+    selected_voice = voice_type.split(" ")[0]
 
-@app.get("/")
-def home():
-    return {"message": "Movie Recap Audio API is online!"}
+st.title("🎬 မြန်မာ Movie Recap Script & Audio Generator")
+st.write("YouTube Transcript ကို ထည့်သွင်းပေးရုံဖြင့် စိတ်လှုပ်ရှားစရာ မြန်မာရုပ်ရှင်အညွှန်း script နှင့် အသံဖိုင်ကို ဖန်တီးပေးမှာဖြစ်ပါတယ်။")
 
-@app.post("/process-movie-recap")
-async def process_movie_recap(video: UploadFile = File(...), api_key: str = Form(...)):
-    unique_id = str(uuid.uuid4())
-    v_path = os.path.join(TEMP_DIR, f"{unique_id}_video.mp4")
-    a_path = os.path.join(TEMP_DIR, f"{unique_id}_audio.mp3")
+# File Upload (Video) - Max 500MB
+uploaded_video = st.file_uploader("Video ဖိုင်တင်ရန် (Optional - Max 500MB)", type=["mp4", "mkv", "mov"])
+if uploaded_video:
+    st.video(uploaded_video)
 
-    try:
-        # ၁။ ဗီဒီယိုကို သိမ်းဆည်းခြင်း
-        content = await video.read()
-        with open(v_path, "wb") as f:
-            f.write(content)
+# Input - Transcript Area
+transcript_input = st.text_area("YouTube Transcript (စာသား) ကို ဤနေရာတွင် Paste လုပ်ပါ:", height=200)
 
-        # ၂။ Gemini AI Configuration
-        genai.configure(api_key=api_key)
-        
-        # မော်ဒယ်အမည်ကို အတိအကျ သတ်မှတ်ခြင်း
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
-        
-        # ဗီဒီယိုကို Gemini ဆီသို့ Upload တင်ခြင်း
-        v_file = genai.upload_file(path=v_path)
-        
-        # AI က ဗီဒီယိုကို ဖတ်နေစဉ် စောင့်ဆိုင်းခြင်း
-        retry_count = 0
-        while v_file.state.name == "PROCESSING" and retry_count < 30:
-            time.sleep(2)
-            v_file = genai.get_file(v_file.name)
-            retry_count += 1
-
-        # ၃။ မြန်မာဇာတ်ညွှန်း ရေးသားခြင်း
-        prompt = "ဒီဗီဒီယိုကိုကြည့်ပြီး စိတ်လှုပ်ရှားစရာ Movie Recap မြန်မာဇာတ်ညွှန်း ရေးပေးပါ။"
-        
-        try:
-            response = model.generate_content([v_file, prompt])
-            script_text = response.text
-        except Exception as ai_err:
-            return JSONResponse(status_code=500, content={"error": f"AI Error: {str(ai_err)}", "script": None})
-
-        # ၄။ မြန်မာအသံ (TTS) ထုတ်လုပ်ခြင်း
-        voice = "my-MM-ThihaNeural" # မြန်မာအမျိုးသားအသံ
-        communicate = edge_tts.Communicate(script_text, voice)
-        await communicate.save(a_path)
-
-        # ၅။ အောင်မြင်လျှင် စာသားနှင့် အသံ URL ကို ပြန်ပို့ပေးခြင်း
-        return {
-            "script": script_text,
-            "audio_url": f"static/{unique_id}_audio.mp3"
-        }
-
-    except Exception as e:
-        print(f"Server Error: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e), "script": None})
+# AI Function to Generate Script
+def generate_burmese_recap(transcript, api_key):
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
-    finally:
-        # မူရင်းဗီဒီယိုကို ဖျက်ပစ်ခြင်း (Storage ချွေတာရန်)
-        if os.path.exists(v_path):
-            try: os.remove(v_path)
-            except: pass
+    prompt = f"""
+    You are a professional Burmese Movie Recap YouTuber. 
+    Rewrite the following transcript into a high-energy, engaging, and dramatic movie recap script in Burmese.
+    
+    Instructions:
+    1. Use an exciting storytelling tone (e.g., 'ဒီနေ့မှာတော့...', 'ဇာတ်လမ်းလေးကတော့...').
+    2. Make it sound natural for a narrator.
+    3. Break it into a proper story flow.
+    
+    Transcript:
+    {transcript}
+    """
+    
+    response = model.generate_content(prompt)
+    return response.text
 
-if __name__ == "__main__":
-    import uvicorn
-    # Render တွင် run ရန် port သတ်မှတ်ချက်
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+# Audio Generation Function
+async def save_audio(text, voice):
+    output_path = "recap_audio.mp3"
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(output_path)
+    return output_path
+
+# Process Button
+if st.button("Recap ပြုလုပ်မယ်"):
+    if not api_key:
+        st.error("ကျေးဇူးပြု၍ API Key အရင်ထည့်ပေးပါ။")
+    elif not transcript_input:
+        st.warning("Transcript စာသားထည့်ပေးပါ။")
+    else:
+        try:
+            with st.spinner("🤖 AI က မြန်မာစာသား ဖန်တီးနေပါတယ်..."):
+                # 1. Generate Burmese Script
+                burmese_script = generate_burmese_recap(transcript_input, api_key)
+                st.subheader("📝 မြန်မာဘာသာဖြင့် ရုပ်ရှင်အညွှန်း script:")
+                st.write(burmese_script)
+                
+            with st.spinner("🎙️ အသံဖိုင်အဖြစ် ပြောင်းလဲနေပါတယ်..."):
+                # 2. Generate Audio
+                audio_file_path = asyncio.run(save_audio(burmese_script, selected_voice))
+                
+                # 3. Display Audio Player
+                st.subheader("🔊 အသံဖိုင် နားထောင်ရန်:")
+                audio_file = open(audio_file_path, 'rb')
+                st.audio(audio_file.read(), format='audio/mp3')
+                
+                # 4. Download Button
+                st.download_button(
+                    label="📥 Audio ဖိုင်ကို Download ရယူမယ်",
+                    data=audio_file,
+                    file_name="burmese_movie_recap.mp3",
+                    mime="audio/mp3"
+                )
+        except Exception as e:
+            st.error(f"အမှားအယွင်းရှိနေပါသည်: {e}")
+
+st.markdown("---")
+st.caption("Developed for Burmese Movie Recap Creators")
