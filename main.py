@@ -31,7 +31,7 @@ async def process_movie_recap(video: UploadFile = File(...), api_key: str = Form
 
         # 2. Gemini AI နဲ့ ဇာတ်ညွှန်းရေးခြင်း
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         v_file = genai.upload_file(path=v_path)
         
         while v_file.state.name == "PROCESSING":
