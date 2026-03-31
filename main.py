@@ -9,15 +9,16 @@ import time
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap AI", layout="wide")
 
-st.title("🎬 Burmese Movie Recap AI (Final Fix)")
+st.title("🎬 Burmese Movie Recap AI (Gemini 2.0)")
 
-# Sidebar for Settings
+# Sidebar Settings
 with st.sidebar:
     st.header("⚙️ Settings")
     api_key = st.text_input("Gemini API Key ကိုထည့်ပါ:", type="password")
     
-    # Model ရွေးချယ်မှုအပိုင်း (404 ဖြစ်ပါက Pro ကို ပြောင်းသုံးရန်)
-    model_choice = st.selectbox("AI Model ရွေးချယ်ပါ", ["gemini-1.5-flash", "gemini-1.5-pro"])
+    # သင့် API မှာ ရနိုင်တဲ့ Model တွေကိုပဲ ရွေးချယ်ခိုင်းပါမယ်
+    model_choice = st.selectbox("AI Model ရွေးချယ်ပါ", 
+                                ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash"])
     
     voice_option = st.selectbox("အသံရွေးချယ်ပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
     voice_name = voice_option.split(" ")[0]
@@ -36,7 +37,7 @@ def process_video_with_gemini(video_path, selected_model):
     video_file = genai.upload_file(path=video_path)
     
     status_text = st.empty()
-    status_text.info(f"⏳ {selected_model} ကို အသုံးပြုပြီး ဗီဒီယိုကို စစ်ဆေးနေပါတယ်...")
+    status_text.info(f"⏳ {selected_model} ဖြင့် ဗီဒီယိုကို စစ်ဆေးနေပါတယ်...")
     
     # Wait for processing
     while video_file.state.name == "PROCESSING":
@@ -48,8 +49,13 @@ def process_video_with_gemini(video_path, selected_model):
 
     status_text.success("✅ ဗီဒီယိုဖတ်ပြီးပါပြီ။ Script ရေးသားနေပါတယ်။")
 
+    # Model အသစ် (Gemini 2.0) ကို အသုံးပြုခြင်း
     model = genai.GenerativeModel(model_name=selected_model)
-    prompt = "မင်းက ကျွမ်းကျင်တဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ ဒီဗီဒီယိုကို ကြည့်ပြီး စိတ်ဝင်စားစရာကောင်းတဲ့ Recap Script တစ်ခုကို မြန်မာလို အသေးစိတ် ရေးပေးပါ။"
+    prompt = """
+    မင်းက ကျွမ်းကျင်တဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
+    ဒီဗီဒီယိုကို ကြည့်ပြီး စိတ်ဝင်စားစရာကောင်းတဲ့ Recap Script တစ်ခုကို မြန်မာလို အသေးစိတ် ရေးပေးပါ။
+    ဗီဒီယိုထဲက အဖြစ်အပျက်တွေကို အစအဆုံး ပြန်ပြောပြပေးပါ။
+    """
     
     response = model.generate_content([prompt, video_file])
     return response.text
@@ -73,7 +79,7 @@ with col2:
     
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
         if not api_key:
-            st.error("Gemini API Key ကို အရင်ထည့်ပါ။")
+            st.error("API Key ကို Sidebar မှာ အရင်ထည့်ပါ။")
         else:
             try:
                 with st.spinner("လုပ်ဆောင်နေပါသည်..."):
@@ -92,13 +98,6 @@ with col2:
                         st.success("အောင်မြင်သည်!")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
-                # Debugging: ရနိုင်တဲ့ model တွေကို ပြပေးမယ်
-                st.write("သင့် API Key ဖြင့် အောက်ပါ Model များကို သုံးနိုင်သည်-")
-                try:
-                    models = [m.name for m in genai.list_models()]
-                    st.write(models)
-                except:
-                    pass
 
 # --- Result Section ---
 if 'recap_script' in st.session_state:
