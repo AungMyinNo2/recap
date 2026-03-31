@@ -10,7 +10,7 @@ from moviepy.editor import VideoFileClip, AudioFileClip
 # --- Configuration ---
 st.set_page_config(page_title="AI Movie Recap Myanmar", layout="wide")
 
-# API Key Setup (Streamlit Secrets ထဲမှာ GEMINI_API_KEY ထည့်ထားပါ)
+# API Key Setup
 if "GEMINI_API_KEY" not in st.secrets:
     st.error("❌ Secrets ထဲမှာ 'GEMINI_API_KEY' ကို အရင်ထည့်ပေးပါ။")
     st.stop()
@@ -21,17 +21,18 @@ async def generate_audio(text, output_path, rate="+0%"):
     """ကြည်လင်တဲ့ မြန်မာအသံ ထုတ်ပေးခြင်း"""
     voice = "my-MM-NilarNeural"
     communicate = edge_tts.Communicate(text, voice, rate=rate)
-    await communicate.save(output_path)
+    await asyncio.wait_for(communicate.save(output_path), timeout=60)
 
 def get_recap_script(video_path, duration):
-    """Gemini 1.5 Flash နဲ့ အချိန်ကိုက် Script ရေးသားခြင်း"""
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    """Gemini AI ကို Script ရေးခိုင်းခြင်း"""
+    # Model အမည်ကို version အသစ်ဆုံး သုံးထားပါသည်
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     
-    # ၁။ Gemini ဆီ Video တင်ခြင်း
+    # ၁။ Video Upload
     video_file = genai.upload_file(path=video_path)
     st.info("AI က Video ကို လေ့လာနေပါတယ်။ ခဏစောင့်ပေးပါ...")
 
-    # ၂။ Video Processing ပြီးအောင် စောင့်ခြင်း (404 Error မတက်အောင်)
+    # ၂။ Video Processing ပြီးအောင် စောင့်ခြင်း (Processing state မပြီးခင် ခေါ်မိပါက 404 တက်တတ်ပါသည်)
     while video_file.state.name == "PROCESSING":
         time.sleep(2)
         video_file = genai.get_file(video_file.name)
@@ -39,7 +40,7 @@ def get_recap_script(video_path, duration):
     if video_file.state.name == "FAILED":
         raise Exception("Video processing failed on Gemini server.")
 
-    # ၃။ Script ရေးခိုင်းခြင်း
+    # ၃။ Prompt ပေးခြင်း
     prompt = f"""
     ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
     စည်းကမ်းချက်-
@@ -50,7 +51,7 @@ def get_recap_script(video_path, duration):
     
     response = model.generate_content([prompt, video_file])
     
-    # ပြီးရင် server ပေါ်က file ကို ဖျက်ပါ
+    # Server ပေါ်က file ကို ချက်ချင်းဖျက်ပါ
     genai.delete_file(video_file.name)
     
     return response.text
@@ -59,11 +60,9 @@ def get_recap_script(video_path, duration):
 st.title("🎬 AI Movie Recap (Burmese Sync)")
 st.write("Video တင်ပေးပါ၊ AI က ကြာချိန်နဲ့အကိုက် မြန်မာအသံဖိုင် ထုတ်ပေးပါမယ်။")
 
-# File Uploader
-v_file = st.file_uploader("Video ရွေးချယ်ပါ (Max 500MB)", type=["mp4", "mov", "avi"])
+v_file = st.file_uploader("Video ရွေးချယ်ပါ", type=["mp4", "mov", "avi"])
 
 if v_file:
-    # ယာယီသိမ်းခြင်း
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
         tmp.write(v_file.read())
         video_path = tmp.name
@@ -82,7 +81,7 @@ if v_file:
                 st.subheader("📝 Generated Script:")
                 st.write(script_text)
 
-                # ၂။ ပထမအကြိမ် အသံထုတ်ခြင်း
+                # ၂။ အသံထုတ်ခြင်း
                 mp3_out = "recap.mp3"
                 asyncio.run(generate_audio(script_text, mp3_out))
 
@@ -90,13 +89,12 @@ if v_file:
                 audio_clip = AudioFileClip(mp3_out)
                 actual_dur = audio_clip.duration
                 
-                # ၁ စက္ကန့်ထက် ပိုကွာရင် Speed ပြန်ညှိမည်
                 if abs(v_dur - actual_dur) > 1:
                     speed_change = int((actual_dur / v_dur - 1) * 100)
-                    speed_change = max(min(speed_change, 50), -50) # limit
+                    speed_change = max(min(speed_change, 50), -50)
                     final_rate = f"{speed_change:+}%"
                     
-                    audio_clip.close() # ဖိုင်ကို ပိတ်ပြီးမှ အသစ်ပြန်ထုတ်
+                    audio_clip.close()
                     asyncio.run(generate_audio(script_text, mp3_out, rate=final_rate))
                     audio_clip = AudioFileClip(mp3_out)
 
@@ -106,7 +104,7 @@ if v_file:
                 audio_clip.close()
 
                 # ၅။ ရလဒ်ပြသခြင်း
-                st.success(f"✅ အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ! (Target: {v_dur}s)")
+                st.success(f"✅ အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!")
                 
                 col1, col2 = st.columns(2)
                 with col1:
