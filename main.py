@@ -41,7 +41,7 @@ with st.sidebar:
         voice_option = st.selectbox("အသံရွေးပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
         voice_name = voice_option.split(" ")[0]
     else:
-        # Gemini Voices (Must be lowercase for API)
+        # Gemini Voices (Must be lowercase)
         voice_name = st.selectbox("Gemini Voice ရွေးပါ", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
         st.warning("မှတ်ချက်: Gemini AI အသံများသည် မြန်မာလေယူလေသိမ်း အနည်းငယ် လွဲနိုင်ပါသည်။")
 
@@ -58,34 +58,36 @@ if active_key:
 
 async def generate_audio_edge(text, output_file, voice, speed):
     communicate = edge_tts.Communicate(text, voice, rate=speed)
-    await communicate.save(output_file)
+    await asyncio.wait_for(communicate.save(output_file), timeout=60)
 
 def generate_audio_gemini(text, output_file, voice_name):
-    """Google AI Studio (Gemini 2.0) ဖြင့် အသံထုတ်ခြင်း - Fixed Version"""
-    # Gemini Studio Audio အတွက် gemini-2.0-flash ကိုသာ သုံးရပါမည်
+    """Google AI Studio (Gemini 2.0) ဖြင့် အသံထုတ်ခြင်း - Fixed Dictionary Structure"""
     model = genai.GenerativeModel("gemini-2.0-flash")
     
-    # API သို့ ပို့မည့် format ကို ပြင်ဆင်ခြင်း
+    # Error ပြင်ဆင်ထားသော Dictionary Format
     response = model.generate_content(
         text,
         generation_config={
             "response_mime_type": "audio/mpeg",
             "speech_config": {
                 "voice_config": {
-                    "prebuilt_voice_config": voice_name.lower() # စာလုံးအသေးဖြင့် ပို့ရပါမည်
+                    "prebuilt_voice_config": {
+                        "voice_name": voice_name.lower() # voice_name key ထည့်ရပါမည်
+                    }
                 }
             }
         }
     )
     
-    # Audio data ကို ဖိုင်အဖြစ် သိမ်းခြင်း
-    # Gemini response ထဲမှ blob data ကို ရှာဖွေခြင်း
+    # Audio data ကို သိမ်းဆည်းခြင်း
+    found_audio = False
     for part in response.candidates[0].content.parts:
         if part.inline_data:
             with open(output_file, "wb") as f:
                 f.write(part.inline_data.data)
-            return True
-    return False
+            found_audio = True
+            break
+    return found_audio
 
 def get_mp3_duration(file_path):
     try:
@@ -147,7 +149,7 @@ with col2:
                         st.session_state.usage_counter = 0
                     st.rerun()
             except Exception as e:
-                st.error(f"Script Generation Error: {str(e)}")
+                st.error(f"Script Error: {str(e)}")
 
 # --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
@@ -165,10 +167,9 @@ if 'recap_script' in st.session_state:
                     if voice_source == "Edge-TTS (Burmese Native)":
                         asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
                     else:
-                        # Gemini Audio Generation
                         success = generate_audio_gemini(st.session_state['recap_script'], audio_output, voice_name)
                         if not success:
-                            st.error("Gemini Voice ထုတ်ရာတွင် အမှားရှိနေပါသည်။ Edge-TTS ကို ပြောင်းသုံးကြည့်ပါ။")
+                            st.error("Gemini Voice ထုတ်ရာတွင် အမှားရှိနေပါသည်။")
                     
                     st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
                     st.session_state.audio_ready = True
@@ -191,4 +192,4 @@ if 'recap_script' in st.session_state:
         m3.metric("Difference", f"{int(diff)} s", delta=f"{int(diff)} s", delta_color="inverse")
         
         with open("recap_audio.mp3", "rb") as f:
-            st.download_button("Download Synced MP3", f, file_name="final_recap.mp3")
+            st.download_button("Download Synced MP3", f, file_name="youtuber_recap.mp3")
