@@ -10,7 +10,6 @@ from moviepy.editor import VideoFileClip
 from mutagen.mp3 import MP3
 
 # --- (၁) ဒီနေရာမှာ သင့် API Key တွေကို အသေထည့်ထားလိုက်ပါ ---
-# တစ်ကြောင်းချင်းစီမှာ Key တစ်ခုစီ ထည့်ပေးပါ
 MY_KEYS = [
     "AIzaSyB4tBtIKp1eQYWI7pQPaMG-m8rOHlQFDE0",
 "AIzaSyD4_HRejuycFNwxcSROEJRqnX2dF1sqvPo",
@@ -20,7 +19,7 @@ MY_KEYS = [
 "AIzaSyB8jfz0E8WJgzP0eW6Zkskj22zIgGJn4d0",
 "AIzaSyAWf02_jnI6Sl2Csn7ih3hOxNFsEwCHHrU",
 "AIzaSyD6zSTLLvqDP41iy5j5qZ8Czwm_ZLiZ7VY",
-    
+
 ]
 
 # --- Setup Configuration ---
@@ -39,15 +38,14 @@ if 'current_key_index' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # Secrets ရှိမရှိ အရင်စစ်မယ်၊ မရှိရင် အပေါ်က MY_KEYS ကို သုံးမယ်
+    # Secrets ရှိမရှိ စစ်မယ်၊ မရှိရင် MY_KEYS ကို သုံးမယ်
     if "GEMINI_KEYS" in st.secrets:
         keys_from_secrets = st.secrets["GEMINI_KEYS"]
         api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
     else:
         api_keys = MY_KEYS
 
-    # UI မှာ ပြသခြင်း
-    keys_input = st.text_area("Gemini API Keys (အပေါ်က ကုဒ်ထဲမှာ ထည့်ထားရင် ဒီမှာ ပြန်ထည့်စရာမလိုပါ):", 
+    keys_input = st.text_area("Gemini API Keys (ကုဒ်ထဲမှာ ထည့်ထားရင် ဒီမှာ ပြန်ထည့်စရာမလိုပါ):", 
                               value="\n".join(api_keys), height=120)
     api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
     
@@ -66,7 +64,9 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice (Experimental)", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    model_choice = st.selectbox("AI Model (Recap အတွက်)", ["gemini-2.0-flash", "gemini-1.5-flash"])
+    # Gemini 2.0 Flash Thinking (Gemini 2.5) ကို ထည့်သွင်းထားသည်
+    model_choice = st.selectbox("AI Model (Recap အတွက်)", 
+                                ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash", "gemini-1.5-flash"])
     
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
@@ -75,7 +75,7 @@ with st.sidebar:
 if active_key:
     genai.configure(api_key=active_key)
 
-# --- Functions (မပြောင်းလဲပါ) ---
+# --- Functions ---
 
 async def generate_audio_edge(text, output_file, voice, speed):
     communicate = edge_tts.Communicate(text, voice, rate=speed)
@@ -128,11 +128,11 @@ with col1:
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
-        if not active_key: st.error("API Key မရှိသေးပါ။ ကုဒ်ထဲတွင် ထည့်ပါ သို့မဟုတ် Secrets ကိုသုံးပါ။")
+        if not active_key: st.error("API Key မရှိသေးပါ။ ကုဒ်ထဲတွင် ထည့်ပါ။")
         else:
             try:
                 genai.configure(api_key=active_key)
-                with st.spinner("AI Script ရေးသားနေပါသည်..."):
+                with st.spinner(f"{model_choice} ဖြင့် Script ရေးသားနေပါသည်..."):
                     model = genai.GenerativeModel(model_choice)
                     video_file = genai.upload_file(path=st.session_state.video_path)
                     while video_file.state.name == "PROCESSING": 
@@ -140,7 +140,12 @@ with col2:
                         video_file = genai.get_file(video_file.name)
                     
                     target_words = int((video_duration / 60) * 140)
-                    prompt = f"ဗီဒီယိုကို ကြည့်ပြီး မြန်မာ Movie Recap Script ရေးပေးပါ။ စာလုံးရေ {target_words} ခန့်။"
+                    prompt = f"""
+                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် မြန်မာ Movie Recap Script ရေးပေးပါ။
+                    ၁။ Narrative Style ပဲ ရေးပါ။ Timestamps မပါစေရ။
+                    ၂။ အသံထွက်တဲ့အခါ သဘာဝကျဖို့ စာလုံးပေါင်းမှန်ပါစေ။
+                    ၃။ ဗီဒီယိုကြာချိန် {int(video_duration)} စက္ကန့်အတွက် စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။
+                    """
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
                     st.session_state.usage_counter += 1
@@ -151,7 +156,7 @@ with col2:
             except Exception as e:
                 st.error(f"Script Error: {str(e)}")
 
-# --- Result Section ---
+# --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
     st.divider()
     edited_script = st.text_area("Generated Script:", st.session_state['recap_script'], height=200)
