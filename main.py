@@ -1,33 +1,19 @@
-import os
-import sys
-
-# --- Python 3.13+ Compatibility Fix ---
-# audioop က Python 3.13 မှာ မပါတော့လို့ audioop-lpmud ကို အစားထိုးသုံးတာဖြစ်ပါတယ်
-try:
-    import audioop
-except ImportError:
-    try:
-        import audioop_lpmud as audioop
-        sys.modules['audioop'] = audioop
-    except ImportError:
-        # Streamlit က သွင်းမပေးသေးရင် error မတက်အောင် ခဏကျော်ထားမယ်
-        audioop = None
-# --------------------------------------
-
 import streamlit as st
 import google.generativeai as genai
 from google.api_core import exceptions
 import edge_tts
 import asyncio
+import os
 import tempfile
 import time
 from moviepy.editor import VideoFileClip, AudioFileClip
 
 # --- Configuration ---
-st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon="🎙️")
+st.set_page_config(page_title="AI Movie Recap Pro", layout="wide", page_icon="🎙️")
 
 # --- API Key Rotation Logic ---
 def get_model_with_rotation():
+    """Secrets ထဲက Key တွေကို တစ်ခုပြီးတစ်ခု စမ်းသုံးပေးမည့် Function"""
     if "GEMINI_KEYS" not in st.secrets:
         st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List) ကို အရင်ထည့်ပေးပါ။")
         st.stop()
@@ -52,6 +38,7 @@ def get_model_with_rotation():
     st.error("❌ API Keys အားလုံး Limit ပြည့်နေပါသည် သို့မဟုတ် အလုပ်မလုပ်ပါ။")
     st.stop()
 
+# Session State Initialize
 if 'recap_script' not in st.session_state:
     st.session_state.recap_script = ""
 
@@ -59,18 +46,24 @@ if 'recap_script' not in st.session_state:
 st.sidebar.title("⚙️ Audio Settings")
 voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["နီလာ (အမျိုးသမီးသံ)", "သီဟ (အမျိုးသားသံ)"])
 voice_id = "my-MM-NilarNeural" if "နီလာ" in voice_choice else "my-MM-ThihaNeural"
+
+# အသံအတိုးအကျယ် (edge-tts volume parameter ကို သုံးမည်)
 volume_value = st.sidebar.slider("အသံ အတိုး/အလျော့ (%)", -50, 50, 0, step=10)
 volume_str = f"{volume_value:+}%"
 
 st.sidebar.markdown(f"🔑 **API Status:** Key #{st.session_state.get('current_key_index', 0) + 1} active")
 
 # --- Functions ---
+
 async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"):
+    """Edge-TTS ဖြင့် အသံဖိုင် ထုတ်ပေးခြင်း"""
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
+    """API Rotation ပါဝင်သော Script Generation"""
     keys = st.secrets["GEMINI_KEYS"]
+    
     for _ in range(len(keys)):
         model, active_key = get_model_with_rotation()
         try:
@@ -81,6 +74,7 @@ def get_recap_script(video_path):
                 time.sleep(2)
                 video_file = genai.get_file(video_file.name)
             
+            # --- Prompt (အချက် ၂ ဖယ်ရှားထားသည်) ---
             prompt = """
             ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
             စည်းကမ်းချက်-
@@ -104,7 +98,7 @@ def get_recap_script(video_path):
     return None
 
 # --- Main UI ---
-st.title("🎙️ AI Movie Recap (Auto Sync & Multi-Key)")
+st.title("🎙️ AI Movie Recap (Sync & Edit)")
 
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
@@ -135,16 +129,17 @@ if v_file:
             height=300
         )
 
-        if st.button("🚀 ၂။ Generate Audio & Auto Sync"):
+        if st.button("🚀 ၂။ Generate Audio & Sync"):
             with st.spinner("Sync ညှိနေပါတယ်..."):
                 try:
-                    mp3_temp = os.path.join(tempfile.gettempdir(), "temp_audio.mp3")
+                    mp3_temp = "temp_audio.mp3"
                     asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
                     
                     audio_clip = AudioFileClip(mp3_temp)
                     initial_dur = audio_clip.duration
                     audio_clip.close()
 
+                    # Auto Sync Logic
                     speed_change = int((initial_dur / v_dur - 1) * 100)
                     speed_change = max(min(speed_change, 50), -50) 
                     final_rate = f"{speed_change:+}%"
