@@ -6,15 +6,16 @@ import os
 import tempfile
 import time
 from moviepy.editor import VideoFileClip
+from mutagen.mp3 import MP3  # MP3 ကြာချိန် တိုင်းရန်
 
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Ultra AI", layout="wide")
 
-st.title("🎬 Burmese Movie Recap AI (Time-Sync Mode)")
+st.title("🎬 Burmese Movie Recap AI (Exact Time Sync)")
 
 # Sidebar Settings
 with st.sidebar:
-    st.header("⚙️ Model & Voice Settings")
+    st.header("⚙️ Settings")
     api_key = st.text_input("Gemini API Key:", type="password")
     
     model_map = {
@@ -29,7 +30,6 @@ with st.sidebar:
     voice_option = st.selectbox("အသံရွေးချယ်ပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
     voice_name = voice_option.split(" ")[0]
     
-    # Speed Control Slider
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.5, 2.0, 1.0, 0.05)
     speed_param = f"{'+' if voice_speed >= 1.0 else '-'}{int(abs(voice_speed-1.0)*100)}%"
 
@@ -42,12 +42,10 @@ async def generate_audio(text, output_file, voice, speed):
     communicate = edge_tts.Communicate(text, voice, rate=speed)
     await communicate.save(output_file)
 
-def estimate_duration(text, speed):
-    """မြန်မာစာလုံးရေပေါ်မူတည်ပြီး အသံကြာချိန်ကို ခန့်မှန်းတွက်ချက်ခြင်း"""
-    # မြန်မာစာအတွက် ပျမ်းမျှ ၁ စက္ကန့်လျှင် စာလုံးရေ (characters) ၅.၅ လုံးခန့် ဖတ်သည်ဟု ယူဆသည်
-    if not text: return 0
-    base_duration = len(text) / 5.5
-    return base_duration / speed
+def get_mp3_duration(file_path):
+    """MP3 ဖိုင်၏ တကယ့်ကြာချိန်ကို စက္ကန့်ဖြင့် တိုင်းတာခြင်း"""
+    audio = MP3(file_path)
+    return audio.info.length
 
 def process_video_with_gemini(video_path, selected_model, duration_sec):
     video_file = genai.upload_file(path=video_path)
@@ -58,14 +56,11 @@ def process_video_with_gemini(video_path, selected_model, duration_sec):
         time.sleep(3)
         video_file = genai.get_file(video_file.name)
     
-    # ၁ မိနစ်လျှင် ၁၃၅ စာလုံးနှုန်းဖြင့် ဗီဒီယိုကြာချိန်နှင့် ကိုက်အောင် ချိန်ညှိခြင်း
     target_words = int((duration_sec / 60) * 135)
-
     model = genai.GenerativeModel(model_name=selected_model)
-    prompt = f"""
-    မင်းက Movie Recap YouTuber တစ်ယောက်ပါ။ ဒီဗီဒီယိုကို ကြည့်ပြီး ဇာတ်လမ်းကို မြန်မာလို အသေးစိတ် ရေးပေးပါ။
-    အရေးကြီးချက်: ဗီဒီယိုကြာချိန်က {int(duration_sec)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
-    """
+    prompt = f"""မင်းက Movie Recap YouTuber တစ်ယောက်ပါ။ ဒီဗီဒီယိုကိုကြည့်ပြီး ဇာတ်လမ်းကို မြန်မာလို အသေးစိတ် ရေးပေးပါ။ 
+    ဗီဒီယိုကြာချိန်က {int(duration_sec)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။"""
+    
     response = model.generate_content([prompt, video_file])
     return response.text
 
@@ -88,13 +83,12 @@ with col1:
                 st.session_state.video_path = tfile.name
                 clip.close()
         video_duration = st.session_state.video_duration
-        st.metric("Video Duration", f"{int(video_duration)} s")
+        st.metric("Original Video Duration", f"{int(video_duration)} s")
 
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
         if not api_key: st.error("API Key ထည့်ပါ။")
-        elif not uploaded_file: st.warning("Video တင်ပါ။")
         else:
             try:
                 with st.spinner("AI Script ရေးသားနေပါသည်..."):
@@ -106,35 +100,39 @@ with col2:
 # --- Output Section ---
 if 'recap_script' in st.session_state:
     st.divider()
-    col_a, col_b = st.columns([2, 1])
+    st.write("### 📜 Generated Script & Final Sync")
     
-    with col_a:
-        st.write("### 📜 Generated Script")
-        edited_script = st.text_area("Script ပြင်ဆင်ရန်:", st.session_state['recap_script'], height=300)
-        # စာသားပြောင်းလဲမှုကို session state တွင် သိမ်းဆည်းရန်
-        st.session_state['recap_script'] = edited_script
+    edited_script = st.text_area("Script ကို ပြင်ဆင်နိုင်သည်:", st.session_state['recap_script'], height=250)
+    st.session_state['recap_script'] = edited_script
 
-    with col_b:
-        st.write("### ⏱️ Time Sync Check")
-        # အသံကြာချိန်ကို Speed slider အပေါ်မူတည်ပြီး Real-time တွက်ချက်ခြင်း
-        est_audio_dur = estimate_duration(st.session_state['recap_script'], voice_speed)
-        
-        diff = est_audio_dur - video_duration
-        
-        st.metric("Estimated Audio Duration", f"{int(est_audio_dur)} s", delta=f"{int(diff)} s vs Video", delta_color="inverse")
-        
-        if abs(diff) > 10:
-            st.warning("⚠️ အသံကြာချိန်နှင့် ဗီဒီယိုကြာချိန် ကွာဟနေပါသည်။ Speed ကို ချိန်ညှိပါ သို့မဟုတ် စာသား လျှော့ပါ/တိုးပါ။")
-        else:
-            st.success("✅ အချိန်ကိုက်ရန် အဆင်ပြေနိုင်ပါသည်။")
+    if st.button("🔊 အသံဖိုင် (Audio) ထုတ်မည်"):
+        with st.spinner("MP3 ဖန်တီးနေပါသည်..."):
+            audio_output = "recap_audio.mp3"
+            asyncio.run(generate_audio(st.session_state['recap_script'], audio_output, voice_name, speed_param))
+            
+            # အသံဖိုင်ဖန်တီးပြီးနောက် တကယ့်ကြာချိန်ကို တိုင်းတာခြင်း
+            actual_audio_dur = get_mp3_duration(audio_output)
+            
+            # ရလဒ်များကို ပြသခြင်း
+            st.audio(audio_output)
+            
+            # Metric များဖြင့် နှိုင်းယှဉ်ပြသခြင်း
+            m_col1, m_col2, m_col3 = st.columns(3)
+            m_col1.metric("Video Duration", f"{int(video_duration)} s")
+            m_col2.metric("Actual MP3 Duration", f"{int(actual_audio_dur)} s")
+            
+            diff = actual_audio_dur - video_duration
+            m_col3.metric("Difference", f"{int(diff)} s", delta=f"{int(diff)} s", delta_color="inverse")
+            
+            if abs(diff) < 5:
+                st.success("✅ အချိန်ကိုက်မှု အလွန်ကောင်းမွန်ပါသည်။")
+            elif diff > 0:
+                st.warning(f"⚠️ အသံက ဗီဒီယိုထက် {int(diff)} စက္ကန့် ပိုရှည်နေပါသည်။ (Speed တင်ပါ သို့မဟုတ် စာသားလျှော့ပါ)")
+            else:
+                st.warning(f"⚠️ အသံက ဗီဒီယိုထက် {int(abs(diff))} စက္ကန့် ပိုတိုနေပါသည်။ (Speed လျှော့ပါ သို့မဟုတ် စာသားတိုးပါ)")
 
-        if st.button("🔊 အသံဖိုင် ထုတ်မည်"):
-            with st.spinner("MP3 ဖန်တီးနေပါသည်..."):
-                audio_output = "recap_audio.mp3"
-                asyncio.run(generate_audio(st.session_state['recap_script'], audio_output, voice_name, speed_param))
-                st.audio(audio_output)
-                with open(audio_output, "rb") as f:
-                    st.download_button("Download MP3", f, file_name="synced_recap.mp3")
+            with open(audio_output, "rb") as f:
+                st.download_button("Download Synced MP3", f, file_name="final_recap.mp3")
 
 st.markdown("---")
-st.caption("Auto Time-Sync Feature Enabled | Burmese Recap Engine")
+st.caption("Advanced Time-Sync Logic with Actual MP3 Duration Measurement")
