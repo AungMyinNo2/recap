@@ -8,22 +8,23 @@ import time
 import re
 from moviepy.editor import VideoFileClip
 from mutagen.mp3 import MP3
-# --- API Keys သိမ်းဆည်းရန် ဖိုင်အမည် ---
-KEYS_FILE = "api_keys.txt"
 
-def save_keys(keys_text):
-    with open(KEYS_FILE, "w") as f:
-        f.write(keys_text)
-
-def load_keys():
-    if os.path.exists(KEYS_FILE):
-        with open(KEYS_FILE, "r") as f:
-            return f.read()
-    return ""
+# --- (၁) ဒီနေရာမှာ သင့် API Key တွေကို အသေထည့်ထားလိုက်ပါ ---
+# တစ်ကြောင်းချင်းစီမှာ Key တစ်ခုစီ ထည့်ပေးပါ
+MY_KEYS = [
+    "AIzaSyB4tBtIKp1eQYWI7pQPaMG-m8rOHlQFDE0",
+"AIzaSyD4_HRejuycFNwxcSROEJRqnX2dF1sqvPo",
+"AIzaSyBdq0HtlHcdCIxsHcAviP6MMBprufq2BGQ",
+"AIzaSyBLQS0uZzIcyvY_uxmdicDyESIo18tI5z8",
+"AIzaSyBdXIkIVLUMk91fnjW3fuWeFVv_2u6p1YU",
+"AIzaSyB8jfz0E8WJgzP0eW6Zkskj22zIgGJn4d0",
+"AIzaSyAWf02_jnI6Sl2Csn7ih3hOxNFsEwCHHrU",
+"AIzaSyD6zSTLLvqDP41iy5j5qZ8Czwm_ZLiZ7VY",
+    
+]
 
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Pro AI", layout="wide")
-
 st.title("🎬 Burmese Movie Recap AI (Ultra Sync)")
 
 # --- Session State Initializing ---
@@ -38,16 +39,25 @@ if 'current_key_index' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    keys_input = st.text_area("Gemini API Keys (တစ်ကြောင်းလျှင် တစ်ခု):", height=120)
+    # Secrets ရှိမရှိ အရင်စစ်မယ်၊ မရှိရင် အပေါ်က MY_KEYS ကို သုံးမယ်
+    if "GEMINI_KEYS" in st.secrets:
+        keys_from_secrets = st.secrets["GEMINI_KEYS"]
+        api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
+    else:
+        api_keys = MY_KEYS
+
+    # UI မှာ ပြသခြင်း
+    keys_input = st.text_area("Gemini API Keys (အပေါ်က ကုဒ်ထဲမှာ ထည့်ထားရင် ဒီမှာ ပြန်ထည့်စရာမလိုပါ):", 
+                              value="\n".join(api_keys), height=120)
     api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
     
     active_key = None
     if api_keys:
         idx = st.session_state.current_key_index % len(api_keys)
         active_key = api_keys[idx]
-        st.info(f"🔑 Key: {idx + 1}/{len(api_keys)} | 📊 Uses: {st.session_state.usage_counter}/10")
+        st.success(f"🔑 Key {idx + 1} ကို အသုံးပြုနေပါသည်")
+        st.info(f"📊 Uses: {st.session_state.usage_counter}/10")
     
-    # အသံအရင်းအမြစ် ရွေးချယ်မှု
     voice_source = st.radio("အသံအရင်းအမြစ် (Voice Source)", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
     
     if voice_source == "Edge-TTS (Burmese Native)":
@@ -55,9 +65,8 @@ with st.sidebar:
         voice_name = voice_option.split(" ")[0]
     else:
         voice_name = st.selectbox("Gemini Voice (Experimental)", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
-        st.error("⚠️ Gemini Voices သည် မြန်မာစာကို လက်ရှိတွင် Error ပြတတ်ပါသည်။ မရပါက Edge-TTS ကို သုံးပါ။")
 
-    model_choice = st.selectbox("AI Model (Recap အတွက်)", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"])
+    model_choice = st.selectbox("AI Model (Recap အတွက်)", ["gemini-2.0-flash", "gemini-1.5-flash"])
     
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
@@ -66,50 +75,35 @@ with st.sidebar:
 if active_key:
     genai.configure(api_key=active_key)
 
-# --- Functions ---
+# --- Functions (မပြောင်းလဲပါ) ---
 
 async def generate_audio_edge(text, output_file, voice, speed):
-    """Edge-TTS ဖြင့် အသံထုတ်ခြင်း (တည်ငြိမ်သည်)"""
     communicate = edge_tts.Communicate(text, voice, rate=speed)
     await communicate.save(output_file)
 
 def generate_audio_gemini(text, output_file, voice_name):
-    """Gemini 2.0 ဖြင့် အသံထုတ်ခြင်း (Experimental - မြန်မာစာအတွက် Error ပြနိုင်သည်)"""
     model = genai.GenerativeModel("gemini-2.0-flash")
     response = model.generate_content(
         text,
         generation_config={
             "response_mime_type": "audio/mpeg",
-            "speech_config": {
-                "voice_config": {
-                    "prebuilt_voice_config": {
-                        "voice_name": voice_name.lower()
-                    }
-                }
-            }
+            "speech_config": {"voice_config": {"prebuilt_voice_config": {"voice_name": voice_name.lower()}}}
         }
     )
-    
     if response.candidates and response.candidates[0].content.parts:
         for part in response.candidates[0].content.parts:
             if part.inline_data:
-                with open(output_file, "wb") as f:
-                    f.write(part.inline_data.data)
+                with open(output_file, "wb") as f: f.write(part.inline_data.data)
                 return True
     return False
 
 def get_mp3_duration(file_path):
-    try:
-        audio = MP3(file_path)
-        return audio.info.length
-    except:
-        return 0
+    try: return MP3(file_path).info.length
+    except: return 0
 
 def clean_script(text):
-    """စာသားထဲမှ အချိန်များနှင့် မလိုလားအပ်သော စာသားများ ရှင်းထုတ်ခြင်း"""
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return re.sub(r'\s+', ' ', text).strip()
 
 # --- UI Layout ---
 col1, col2 = st.columns([1, 1])
@@ -134,23 +128,19 @@ with col1:
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
-        if not active_key: st.error("API Key ထည့်ပါ။")
+        if not active_key: st.error("API Key မရှိသေးပါ။ ကုဒ်ထဲတွင် ထည့်ပါ သို့မဟုတ် Secrets ကိုသုံးပါ။")
         else:
             try:
                 genai.configure(api_key=active_key)
                 with st.spinner("AI Script ရေးသားနေပါသည်..."):
                     model = genai.GenerativeModel(model_choice)
                     video_file = genai.upload_file(path=st.session_state.video_path)
-                    while video_file.state.name == "PROCESSING": time.sleep(2); video_file = genai.get_file(video_file.name)
+                    while video_file.state.name == "PROCESSING": 
+                        time.sleep(2)
+                        video_file = genai.get_file(video_file.name)
                     
-                    target_words = int((video_duration / 60) * 200)
-                    prompt = f"""
-                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် မြန်မာ Movie Recap Script ရေးပေးပါ။
-                    ၁။ Timestamps တွေ လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
-                    ၂။ စကားပြောပုံစံက energetic ဖြစ်ပါစေ။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတာတွေသုံးပါ။
-                    ၃။ ဗီဒီယိုအဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ်ပြီး အသဲလေးပေးသွားနော်' လို့ ထည့်ပြောပေးပါ။
-                    ၄။ ဗီဒီယိုကြာချိန် {int(video_duration)} စက္ကန့်အတွက် စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။
-                    """
+                    target_words = int((video_duration / 60) * 140)
+                    prompt = f"ဗီဒီယိုကို ကြည့်ပြီး မြန်မာ Movie Recap Script ရေးပေးပါ။ စာလုံးရေ {target_words} ခန့်။"
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
                     st.session_state.usage_counter += 1
@@ -161,49 +151,29 @@ with col2:
             except Exception as e:
                 st.error(f"Script Error: {str(e)}")
 
-# --- Result & Sync Section ---
+# --- Result Section ---
 if 'recap_script' in st.session_state:
     st.divider()
     edited_script = st.text_area("Generated Script:", st.session_state['recap_script'], height=200)
     st.session_state['recap_script'] = edited_script
 
     col_btn1, col_btn2 = st.columns(2)
-    
     with col_btn1:
-        if st.button("🔊 အသံဖိုင် (Audio) ထုတ်မည်"):
-            with st.spinner(f"{voice_source} ဖြင့် အသံဖိုင်ဖန်တီးနေပါသည်..."):
-                try:
-                    audio_output = "recap_audio.mp3"
-                    if voice_source == "Edge-TTS (Burmese Native)":
-                        asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
-                        success = True
-                    else:
-                        success = generate_audio_gemini(st.session_state['recap_script'], audio_output, voice_name)
-                    
-                    if success:
-                        st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
-                        st.session_state.audio_ready = True
-                    else:
-                        st.error("Audio Generation ပျက်ကွက်ပါသည်။ စာသားကို စစ်ဆေးပါ သို့မဟုတ် Edge-TTS ကို ပြောင်းသုံးပါ။")
-                except Exception as e:
-                    st.error(f"Audio Error: {str(e)}")
-                    st.info("အကြံပြုချက်: Gemini Voices သည် မြန်မာစာအတွက် Error ပြနိုင်ပါသည်။ ကျေးဇူးပြု၍ Sidebar မှ Edge-TTS ကို ရွေးချယ်အသုံးပြုပါ။")
+        if st.button("🔊 အသံဖိုင် ထုတ်မည်"):
+            with st.spinner("အသံဖန်တီးနေသည်..."):
+                audio_output = "recap_audio.mp3"
+                if voice_source == "Edge-TTS (Burmese Native)":
+                    asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
+                    success = True
+                else: success = generate_audio_gemini(st.session_state['recap_script'], audio_output, voice_name)
+                
+                if success:
+                    st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
+                    st.audio(audio_output)
 
     if 'actual_audio_dur' in st.session_state:
         with col_btn2:
-            if st.button("⚡ Auto Sync Speed (ဗီဒီယိုနှင့် အချိန်ညှိမည်)"):
-                if video_duration > 0:
-                    ratio = st.session_state.actual_audio_dur / video_duration
-                    st.session_state.v_speed = max(0.3, min(2.0, round(st.session_state.v_speed * ratio, 2)))
-                    st.rerun()
-
-    if 'actual_audio_dur' in st.session_state:
-        st.audio("recap_audio.mp3")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Video Duration", f"{int(video_duration)} s")
-        m2.metric("MP3 Duration", f"{int(st.session_state.actual_audio_dur)} s")
-        diff = st.session_state.actual_audio_dur - video_duration
-        m3.metric("Difference", f"{int(diff)} s", delta=f"{int(diff)} s", delta_color="inverse")
-        
-        with open("recap_audio.mp3", "rb") as f:
-            st.download_button("Download Synced MP3", f, file_name="youtuber_recap.mp3")
+            if st.button("⚡ Auto Sync Speed"):
+                ratio = st.session_state.actual_audio_dur / video_duration
+                st.session_state.v_speed = max(0.3, min(2.0, round(st.session_state.v_speed * ratio, 2)))
+                st.rerun()
