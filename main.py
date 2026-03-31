@@ -5,7 +5,7 @@ import edge_tts
 import os
 import tempfile
 import time
-import re  # စာသားထဲမှ အချိန်များကို ဖြတ်ရန်
+import re
 from moviepy.editor import VideoFileClip
 from mutagen.mp3 import MP3
 
@@ -18,6 +18,12 @@ st.title("🎬 Burmese Movie Recap AI (YouTuber Style)")
 with st.sidebar:
     st.header("⚙️ Settings")
     api_key = st.text_input("Gemini API Key:", type="password")
+    
+    # 429 Error သက်သာစေရန် Model ရွေးချယ်မှု ပြန်ထည့်ပေးထားပါသည်
+    model_choice = st.selectbox(
+        "AI Model ကိုရွေးပါ (429 Error တက်ပါက 1.5 ကို သုံးပါ)", 
+        ["gemini-1.5-flash", "gemini-2.0-flash"]
+    )
     
     if 'v_speed' not in st.session_state:
         st.session_state.v_speed = 1.0
@@ -43,10 +49,8 @@ def get_mp3_duration(file_path):
     return audio.info.length
 
 def clean_script(text):
-    """စာသားထဲမှ အချိန် (00:00, 1:20, [15:00]) နှင့် မိနစ် ဟူသော စကားလုံးများကို အကုန်ဖြတ်ထုတ်ခြင်း"""
-    # 00:00, 1:20, [05:30] ပုံစံများကို ရှာပြီး ဖြတ်မည်
-    text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)', '', text)
-    # ပိုနေသော space များကို ရှင်းမည်
+    """စာသားထဲမှ အချိန်များနှင့် စက္ကန့်/မိနစ် များကို အလိုအလျောက် ဖြတ်ထုတ်ခြင်း"""
+    text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -73,13 +77,17 @@ with col1:
 
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
-    if st.button("Recap Script စတင်ပြုလုပ်မည် (YouTuber Style)", type="primary"):
-        if not api_key: st.error("API Key ထည့်ပါ။")
+    if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
+        if not api_key: 
+            st.error("Sidebar တွင် API Key အရင်ထည့်ပါ။")
+        elif not uploaded_file: 
+            st.warning("ဗီဒီယို အရင်တင်ပါ။")
         else:
             try:
-                with st.spinner("YouTuber တစ်ယောက်လို Recap ရေးသားနေပါသည်..."):
-                    model = genai.GenerativeModel('gemini-2.0-flash') # Gemini 2.0 ကိုသုံးထားပါသည်
+                with st.spinner(f"{model_choice} စနစ်ဖြင့် YouTuber Recap ရေးသားနေပါသည်..."):
+                    model = genai.GenerativeModel(model_choice)
                     video_file = genai.upload_file(path=st.session_state.video_path)
+                    
                     while video_file.state.name == "PROCESSING": 
                         time.sleep(2)
                         video_file = genai.get_file(video_file.name)
@@ -93,21 +101,24 @@ with col2:
                     လိုအပ်ချက်များ (Strict Requirements):
                     ၁။ 00:00 (Timestamps) တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ(လုံးဝ) မထည့်ပါနဲ့။ စာသားသက်သက် Narrative Style ပဲ ရေးပါ။
                     ၂။ စကားပြောပုံစံက အရမ်း energetic ဖြစ်ပါစေ။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ', 'ဇာတ်လမ်းလေးကတော့' စတဲ့ ဆွဲဆောင်မှုရှိတဲ့ စကားလုံးတွေ သုံးပါ။
-                    ၃။ စာသားကို SRT ပုံစံမဟုတ်ဘဲ စာပိုဒ်တဆက်တည်း YouTuber တစ်ယောက် Recap ပြောပြနေသလို ရေးပေးပါ။
+                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း YouTuber တစ်ယောက် Recap ပြောပြနေသလို ရေးပေးပါ။
                     ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
                     """
                     
                     response = model.generate_content([prompt, video_file])
-                    # ထွက်လာတဲ့ စာသားကို နောက်တစ်ကြိမ် Clean လုပ်မည်
                     st.session_state['recap_script'] = clean_script(response.text)
-            except Exception as e: st.error(str(e))
+                    st.success("အောင်မြင်စွာ ရေးသားပြီးပါပြီ!")
+            except Exception as e: 
+                if "429" in str(e):
+                    st.error("Error 429: အခမဲ့အသုံးပြုနိုင်သည့် အကြိမ်ရေ ပြည့်သွားပါပြီ။ ၁ မိနစ်ခန့်စောင့်ပါ သို့မဟုတ် Sidebar တွင် 'gemini-1.5-flash' သို့ ပြောင်းလဲအသုံးပြုကြည့်ပါ။")
+                else:
+                    st.error(f"Error Details: {str(e)}")
 
 # --- Output & Sync Section ---
 if 'recap_script' in st.session_state:
     st.divider()
     st.write("### 📜 Generated YouTuber Recap Script")
     
-    # Text area ထဲမှာ စာသားကို နောက်ဆုံးအကြိမ် Clean လုပ်ပြီး ပြမည်
     final_clean = clean_script(st.session_state['recap_script'])
     edited_script = st.text_area("Script ကို လိုအပ်သလို ပြင်ဆင်ပါ (အချိန်စာသားများ မပါစေရ):", final_clean, height=250)
     st.session_state['recap_script'] = edited_script
@@ -116,9 +127,10 @@ if 'recap_script' in st.session_state:
     
     with btn_col1:
         if st.button("🔊 အသံဖိုင် (Audio) ထုတ်မည်"):
-            audio_output = "recap_audio.mp3"
-            asyncio.run(generate_audio(st.session_state['recap_script'], audio_output, voice_name, speed_param))
-            st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
+            with st.spinner("အသံဖိုင် ဖန်တီးနေပါသည်..."):
+                audio_output = "recap_audio.mp3"
+                asyncio.run(generate_audio(st.session_state['recap_script'], audio_output, voice_name, speed_param))
+                st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
 
     if 'actual_audio_dur' in st.session_state:
         with btn_col2:
