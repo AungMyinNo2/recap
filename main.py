@@ -12,15 +12,38 @@ from mutagen.mp3 import MP3
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Pro AI", layout="wide")
 
-st.title("🎬 Burmese Movie Recap AI (Auto-Fix Version)")
+st.title("🎬 Burmese Movie Recap AI (API Rotation Mode)")
+
+# --- Session State Initializing ---
+# API Key အလှည့်ကျသုံးရန် state များကို သိမ်းဆည်းခြင်း
+if 'usage_counter' not in st.session_state:
+    st.session_state.usage_counter = 0
+if 'current_key_index' not in st.session_state:
+    st.session_state.current_key_index = 0
 
 # Sidebar Settings
 with st.sidebar:
     st.header("⚙️ Settings")
-    api_key = st.text_input("Gemini API Key:", type="password")
     
-    # သင့် API Key တွင် အလုပ်လုပ်နိုင်သော Model များစာရင်း
-    # 404 Error မတက်စေရန် ပုံစံမျိုးစုံ စမ်းသပ်ပါမည်
+    # API Keys များကို တစ်ကြောင်းချင်းစီ ထည့်ရန် Box
+    keys_input = st.text_area("Gemini API Keys များထည့်ပါ (တစ်ကြောင်းလျှင် တစ်ခု):", 
+                             placeholder="AIzaSy...key1\nAIzaSy...key2", height=150)
+    
+    # ရိုက်ထည့်ထားသော key များကို စာရင်းလုပ်ခြင်း
+    api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
+    
+    active_key = None
+    if api_keys:
+        # လက်ရှိသုံးမည့် key ကို ရွေးချယ်ခြင်း
+        total_keys = len(api_keys)
+        idx = st.session_state.current_key_index % total_keys
+        active_key = api_keys[idx]
+        
+        st.info(f"🔑 လက်ရှိသုံးနေသော Key: {idx + 1} / {total_keys}")
+        st.progress(st.session_state.usage_counter / 10, text=f"အသုံးပြုပြီးအကြိမ်ရေ: {st.session_state.usage_counter} / 10")
+    else:
+        st.warning("⚠️ API Key အနည်းဆုံး တစ်ခု ထည့်ပေးပါ။")
+
     model_options = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
     model_choice = st.selectbox("AI Model ရွေးချယ်ပါ", model_options)
     
@@ -34,10 +57,12 @@ with st.sidebar:
     st.session_state.v_speed = voice_speed
     speed_param = f"{'+' if st.session_state.v_speed >= 1.0 else '-'}{int(abs(st.session_state.v_speed-1.0)*100)}%"
 
-if api_key:
-    genai.configure(api_key=api_key)
-
 # --- Functions ---
+
+def rotate_api_key():
+    """Key ကို နောက်တစ်ခုသို့ ပြောင်းလဲခြင်း"""
+    st.session_state.current_key_index += 1
+    st.session_state.usage_counter = 0
 
 async def generate_audio(text, output_file, voice, speed):
     communicate = edge_tts.Communicate(text, voice, rate=speed)
@@ -48,7 +73,6 @@ def get_mp3_duration(file_path):
     return audio.info.length
 
 def clean_script(text):
-    """စာသားထဲမှ အချိန်များနှင့် မိနစ်များကို ဖြတ်ထုတ်ခြင်း"""
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -77,14 +101,15 @@ with col1:
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
-        if not api_key: 
+        if not active_key: 
             st.error("API Key အရင်ထည့်ပါ။")
         else:
             try:
-                with st.spinner(f"{model_choice} စနစ်ဖြင့် လုပ်ဆောင်နေပါသည်..."):
-                    # Model ခေါ်ယူမှု (Try-Catch ဖြင့် 404 ကို ကာကွယ်ခြင်း)
+                # လက်ရှိ Key ကို Configure လုပ်ခြင်း
+                genai.configure(api_key=active_key)
+                
+                with st.spinner(f"Key {st.session_state.current_key_index % len(api_keys) + 1} ဖြင့် လုပ်ဆောင်နေပါသည်..."):
                     model = genai.GenerativeModel(model_choice)
-                    
                     video_file = genai.upload_file(path=st.session_state.video_path)
                     while video_file.state.name == "PROCESSING": 
                         time.sleep(2)
@@ -94,20 +119,33 @@ with col2:
                     prompt = f"""
                     မင်းက အရမ်းနာမည်ကြီးတဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
                     ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
-                    
-                    လိုအပ်ချက်များ (Strict Requirements):
-                    ၁။ 00:00 (Timestamps) တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ(လုံးဝ) မထည့်ပါနဲ့။ စာသားသက်သက် Narrative Style ပဲ ရေးပါ။
-                    ၂။ စကားပြောပုံစံက အရမ်း energetic ဖြစ်ပါစေ။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ', 'ဇာတ်လမ်းလေးကတော့' စတဲ့ ဆွဲဆောင်မှုရှိတဲ့ စကားလုံးတွေ သုံးပါ။
-                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း YouTuber တစ်ယောက် Recap ပြောပြနေသလို ရေးပေးပါ။
-                    ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+                    ၁။ Timestamps တွေ လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
+                    ၂။ စကားပြောပုံစံက energetic ဖြစ်ပါစေ။
+                    ၃။ ဗီဒီယိုကြာချိန် {int(video_duration)} စက္ကန့်အတွက် စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။
                     """
                     
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
+                    
+                    # အောင်မြင်ပါက ကောင်တာတိုးမည်
+                    st.session_state.usage_counter += 1
+                    
+                    # ၁၀ ကြိမ်ပြည့်ပါက Key ချိန်းမည်
+                    if st.session_state.usage_counter >= 10:
+                        rotate_api_key()
+                        st.info("အသုံးပြုမှု ၁၀ ကြိမ်ပြည့်သဖြင့် နောက်ထပ် Key တစ်ခုသို့ ပြောင်းလဲလိုက်ပါသည်။")
+                    
                     st.success("အောင်မြင်စွာ ရေးသားပြီးပါပြီ!")
-            except Exception as e: 
-                st.error(f"Error: {str(e)}")
-                st.info("အကြံပြုချက်: Sidebar တွင် Model အမျိုးအစားကို gemini-2.0-flash သို့မဟုတ် gemini-2.5-flash သို့ ပြောင်းလဲစမ်းသပ်ကြည့်ပါ။")
+                    st.rerun()
+
+            except Exception as e:
+                # Error 429 (Quota ပြည့်) တက်ပါက Key ချက်ချင်းချိန်းမည်
+                if "429" in str(e):
+                    st.warning("လက်ရှိ Key Quota ပြည့်သွားပါပြီ။ နောက်တစ်ခုသို့ ပြောင်းလဲနေပါသည်။")
+                    rotate_api_key()
+                    st.rerun()
+                else:
+                    st.error(f"Error: {str(e)}")
 
 # --- Result Section ---
 if 'recap_script' in st.session_state:
