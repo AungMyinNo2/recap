@@ -7,7 +7,9 @@ import tempfile
 import time
 
 # --- Setup Configuration ---
-st.set_page_config(page_title="Burmese Movie Recap AI", layout="wide", page_icon="🎬")
+st.set_page_config(page_title="Burmese Movie Recap AI", layout="wide")
+
+st.title("🎬 Burmese Movie Recap AI")
 
 # Sidebar for Settings
 with st.sidebar:
@@ -15,11 +17,13 @@ with st.sidebar:
     api_key = st.text_input("Gemini API Key ကိုထည့်ပါ:", type="password")
     voice_option = st.selectbox("အသံရွေးချယ်ပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
     voice_name = voice_option.split(" ")[0]
-    st.info("API Key ကို aistudio.google.com မှာ အခမဲ့ယူပါ။")
 
 # API Configuration
 if api_key:
-    genai.configure(api_key=api_key)
+    try:
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        st.error(f"API Configuration Error: {e}")
 
 # --- Functions ---
 
@@ -30,30 +34,30 @@ async def generate_audio(text, output_file, voice):
 
 def process_video_with_gemini(video_path):
     """Video ကို Gemini ဆီပို့ပြီး Script ထုတ်ခြင်း"""
-    # Model name ကို အမှန်ကန်ဆုံး ပုံစံဖြင့် ခေါ်ဆိုခြင်း
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Model name ကို အသစ်ဆုံး version ပြောင်းသုံးထားပါတယ်
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
     
-    # Video Upload to Gemini Cloud
+    # Video Upload
     video_file = genai.upload_file(path=video_path)
     
-    # Video ကို Gemini က ဖတ်နေစဉ် ခေတ္တစောင့်ရန်
     status_text = st.empty()
-    status_text.write("⏳ Gemini က ဗီဒီယိုကို လေ့လာနေပါတယ်... ခေတ္တစောင့်ပေးပါ။")
+    status_text.write("⏳ Gemini က ဗီဒီယိုကို စစ်ဆေးနေပါတယ်။ ခေတ္တစောင့်ပါ။")
     
+    # Wait for processing
     while video_file.state.name == "PROCESSING":
-        time.sleep(3)
+        time.sleep(2)
         video_file = genai.get_file(video_file.name)
     
     if video_file.state.name == "FAILED":
-        raise Exception("Video processing failed on Gemini side.")
+        st.error("ဗီဒီယိုကို ဖတ်လို့မရပါ။ ဖိုင်အမျိုးအစား ပြန်စစ်ပါ။")
+        return None
 
-    status_text.write("✅ ဗီဒီယိုကို လေ့လာပြီးပါပြီ။ Script ရေးသားနေပါတယ်။")
+    status_text.write("✅ ဗီဒီယိုဖတ်ပြီးပါပြီ။ Script ရေးသားနေပါတယ်။")
 
     prompt = """
-    ဒီဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားစရာကောင်းတဲ့ မြန်မာ Movie Recap Script တစ်ခု ရေးပေးပါ။ 
-    စာသားတွေက YouTuber တစ်ယောက် Movie Recap ပြောနေသလို ပုံစံဖြစ်ရမယ်။ 
-    အစမှာ 'ဒီနေ့မှာတော့...' လို့ စပေးပါ။ 
-    ဇာတ်လမ်းအစအဆုံးကို မြန်မာလိုပဲ အသေးစိတ် ရေးပေးပါ။
+    မင်းက ကျွမ်းကျင်တဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
+    ဒီဗီဒီယိုကို ကြည့်ပြီး စိတ်ဝင်စားစရာကောင်းတဲ့ Recap Script တစ်ခုကို မြန်မာလို ရေးပေးပါ။
+    အရေးကြီးတဲ့ အခန်းတွေကို အစအဆုံး အသေးစိတ် ရေးပေးပါ။
     """
     
     response = model.generate_content([prompt, video_file])
@@ -61,14 +65,11 @@ def process_video_with_gemini(video_path):
 
 # --- UI Layout ---
 
-st.title("🎬 Burmese Movie Recap AI")
-
 col1, col2 = st.columns([1, 1])
 
 with col1:
     st.write("### 📤 Step 1: Video တင်ပါ")
-    uploaded_file = st.file_uploader("Video ဖိုင် (MP4, MOV, AVI)", type=["mp4", "mov", "avi"])
-    video_path = None
+    uploaded_file = st.file_uploader("Video ဖိုင် (MP4, MOV)", type=["mp4", "mov", "avi"])
     if uploaded_file:
         st.video(uploaded_file)
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
@@ -77,44 +78,41 @@ with col1:
 
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
-    transcript_input = st.text_area("YouTube Transcript (ရှိလျှင်) ထည့်ပါ - မရှိပါက Video မှ Auto ထုတ်မည်", height=200)
+    transcript_input = st.text_area("စာသား (ရှိလျှင်) ထည့်ပါ (မရှိလျှင် Video မှ Auto ထုတ်မည်)", height=200)
     
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
         if not api_key:
-            st.error("Gemini API Key ထည့်ပေးရန် လိုအပ်ပါသည်။")
-        elif not uploaded_file and not transcript_input:
-            st.warning("ဗီဒီယို တင်ပါ သို့မဟုတ် စာသားထည့်ပါ။")
+            st.error("Gemini API Key ကို Sidebar မှာ အရင်ထည့်ပါ။")
         else:
             try:
-                with st.spinner("AI လုပ်ဆောင်နေပါသည်..."):
+                with st.spinner("AI လုပ်ဆောင်နေပါတယ်..."):
                     if transcript_input.strip():
-                        # Transcript ရှိရင် အဲဒါကိုပဲ သုံးမယ်
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        prompt = f"Rewrite this as an exciting Burmese Movie Recap script: {transcript_input}"
-                        response = model.generate_content(prompt)
+                        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                        response = model.generate_content(f"Rewrite this as a Burmese Movie Recap script: {transcript_input}")
                         final_script = response.text
-                    else:
-                        # Transcript မရှိရင် Video ကို Analysis လုပ်မယ်
+                    elif uploaded_file:
                         final_script = process_video_with_gemini(video_path)
-                    
-                    st.session_state['recap_script'] = final_script
-                    st.success("အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+                    else:
+                        st.warning("Video တင်ပါ သို့မဟုတ် စာသားထည့်ပါ။")
+                        final_script = None
 
-# --- Result & Audio Section ---
+                    if final_script:
+                        st.session_state['recap_script'] = final_script
+                        st.success("Script ရေးသားပြီးပါပြီ!")
+            except Exception as e:
+                # Error ကို သေချာပြရန်
+                st.error(f"Error Details: {str(e)}")
+
+# --- Result Section ---
 if 'recap_script' in st.session_state:
     st.divider()
-    st.write("### 📜 Generated Recap Script")
-    edited_script = st.text_area("Script ကို ပြင်ဆင်နိုင်သည်:", st.session_state['recap_script'], height=300)
+    st.write("### 📜 Generated Script")
+    edited_script = st.text_area("Script ပြင်ဆင်ရန်:", st.session_state['recap_script'], height=300)
     
-    if st.button("🔊 မြန်မာအသံဖိုင် (Audio) ထုတ်မည်"):
-        with st.spinner("ကြည်လင်သောအသံဖိုင် ဖန်တီးနေပါသည်..."):
+    if st.button("🔊 အသံဖိုင် (Audio) ထုတ်မည်"):
+        with st.spinner("ကြည်လင်တဲ့ မြန်မာအသံဖိုင် ဖန်တီးနေပါတယ်..."):
             audio_output = "recap_audio.mp3"
             asyncio.run(generate_audio(edited_script, audio_output, voice_name))
             st.audio(audio_output)
             with open(audio_output, "rb") as f:
-                st.download_button("Download Audio (MP3)", f, file_name="movie_recap.mp3")
-
-st.markdown("---")
-st.caption("Developed by AI for Burmese Creators")
+                st.download_button("Download MP3", f, file_name="recap.mp3")
