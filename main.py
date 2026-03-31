@@ -11,7 +11,7 @@ from mutagen.mp3 import MP3
 
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Pro AI", layout="wide")
-st.title("🎬 Burmese Movie Recap AI (Ultra Sync)")
+st.title("🎬 Burmese Movie Recap AI (Gemini 2.5 Thinking)")
 
 # --- Session State Initializing ---
 if 'usage_counter' not in st.session_state: st.session_state.usage_counter = 0
@@ -26,15 +26,13 @@ with st.sidebar:
         keys_from_secrets = st.secrets["GEMINI_KEYS"]
         api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
         
-        # Key လှည့်သုံးမည့် အပိုင်း
+        # Key လှည့်သုံးမည့် Logic
         idx = st.session_state.current_key_index % len(api_keys)
         active_key = api_keys[idx]
-        st.success(f"🔑 Key {idx + 1} ကို သုံးနေပါသည်")
-        st.info(f"📊 {idx + 1} ခုမြောက် Key အသုံးပြုမှု: {st.session_state.usage_counter}/10")
+        st.success(f"🔑 Key {idx + 1} ကို အသုံးပြုနေပါသည်")
         genai.configure(api_key=active_key)
     except:
-        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard > Secrets မှာ ထည့်ပါ။")
-        api_keys = []
+        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard > Secrets မှာ အရင်ထည့်ပေးပါ။")
         active_key = None
 
     voice_source = st.radio("အသံအရင်းအမြစ်", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
@@ -44,8 +42,9 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    # Model Name ပြင်ဆင်ခြင်း (2.5 မရှိသေးပါ၊ 1.5 သို့မဟုတ် 2.0 ကို သုံးပါ)
-    model_choice = st.selectbox("AI Model", ["gemini-1.5-flash", "gemini-2.0-flash"])
+    # Gemini 2.0 Flash Thinking (Gemini 2.5) ကို အသေထားပေးပါသည်
+    model_choice = "gemini-2.0-flash-thinking-exp-01-21"
+    st.info(f"🚀 အသုံးပြုနေသည့် Model: {model_choice}")
     
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
@@ -61,7 +60,9 @@ def get_mp3_duration(file_path):
     except: return 0
 
 def clean_script(text):
+    # Timestamps များနှင့် မလိုအပ်သော Thinking tags များ ရှင်းထုတ်ခြင်း
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
+    text = re.sub(r'<[^>]+>', '', text) # Thinking tags ရှင်းရန်
     return re.sub(r'\s+', ' ', text).strip()
 
 # --- UI Layout ---
@@ -90,7 +91,7 @@ with col2:
         if not active_key: st.error("API Key မရှိပါ။")
         else:
             try:
-                with st.spinner("AI Script ရေးသားနေပါသည်..."):
+                with st.spinner("Gemini 2.5 Thinking ဖြင့် အသေးစိတ် စဉ်းစားနေပါသည်..."):
                     model = genai.GenerativeModel(model_choice)
                     video_file = genai.upload_file(path=st.session_state.video_path)
                     while video_file.state.name == "PROCESSING": 
@@ -98,24 +99,25 @@ with col2:
                         video_file = genai.get_file(video_file.name)
                     
                     target_words = int((video_duration / 60) * 140)
-                    prompt = f"""ဒီဗီဒီယိုကို ကြည့်ပြီး Recap Script ရေးပေးပါ။ Timestamps မပါစေရ။ energetic ဖြစ်ပါစေ။ 
-                    အဆုံးမှာ 'အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-                    ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။"""
-                    
+                    prompt = f"""
+                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
+                    ၁။ Narrative Style ပဲ ရေးပါ။ Timestamps မပါစေရ။
+                    ၂။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတဲ့ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
+                    ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
+                    ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+                    """
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
-                    
-                    # ကောင်တာ တိုးခြင်း
                     st.session_state.usage_counter += 1
+                    
                     if st.session_state.usage_counter >= 10:
                         st.session_state.current_key_index += 1
                         st.session_state.usage_counter = 0
                     st.rerun()
-                    
             except Exception as e:
                 error_msg = str(e)
                 if "429" in error_msg:
-                    st.warning("⚠️ လက်ရှိ Key မှာ Quota ပြည့်သွားပါပြီ။ နောက် Key တစ်ခုသို့ အလိုအလျောက် ပြောင်းလဲနေပါသည်။ ခေတ္တစောင့်ပါ...")
+                    st.warning("⚠️ Quota ပြည့်သွားပါပြီ။ နောက် Key တစ်ခုသို့ ပြောင်းနေပါသည်။ ခေတ္တစောင့်ပါ...")
                     st.session_state.current_key_index += 1
                     time.sleep(2)
                     st.rerun()
