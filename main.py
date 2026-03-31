@@ -22,18 +22,16 @@ if 'v_speed' not in st.session_state: st.session_state.v_speed = 1.0
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # Secrets ထဲက Key ကို အလိုအလျောက် ဖတ်ယူခြင်း
     try:
         keys_from_secrets = st.secrets["GEMINI_KEYS"]
         api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
         
         idx = st.session_state.current_key_index % len(api_keys)
         active_key = api_keys[idx]
-        st.success(f"🔑 Key {idx + 1} အသင့်ဖြစ်ပါပြီ (Auto-loaded)")
-        st.info(f"📊 Uses: {st.session_state.usage_counter}/10")
+        st.success(f"🔑 Key {idx + 1} အသင့်ဖြစ်ပါပြီ")
         genai.configure(api_key=active_key)
     except:
-        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard Settings > Secrets မှာ အရင်ထည့်ပေးပါ။")
+        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard > Secrets မှာ ထည့်ပါ။")
         active_key = None
 
     voice_source = st.radio("အသံအရင်းအမြစ်", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
@@ -48,6 +46,7 @@ with st.sidebar:
     # Speed Control Slider
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
+    # Edge-TTS အတွက် rate parameter ပြင်ဆင်ခြင်း
     speed_param = f"{'+' if st.session_state.v_speed >= 1.0 else '-'}{int(abs(st.session_state.v_speed-1.0)*100)}%"
 
 # --- Functions ---
@@ -97,23 +96,19 @@ with col2:
                         video_file = genai.get_file(video_file.name)
                     
                     target_words = int((video_duration / 60) * 140)
-                    
-                    # --- Prompt ---
                     prompt = f"""
                     ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
                     
                     လိုအပ်ချက်များ (Strict Requirements):
-                    ၁။ 00:00 (Timestamps) တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ(လုံးဝ) မထည့်ပါနဲ့။ စာသားသက်က် Narrative Style ပဲ ရေးပါ။
-                    ၂။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ', 'ဇာတ်လမ်းလေးကတော့' စတဲ့ ဆွဲဆောင်မှုရှိတဲ့ စကားလုံးတစ်ခုခုကို သုံးပါ။
-                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း လူတစ်ယောက် Recap ပြောပြနေသလို ရေးပေးပါ။
-                    ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' ဆိုတဲ့ ပုံစံမျိုး ထည့်ပေးပါ။
+                    ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
+                    ၂။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတဲ့ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
+                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
+                    ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
                     ၅။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
                     """
-                    
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
                     st.session_state.usage_counter += 1
-                    
                     if st.session_state.usage_counter >= 10:
                         st.session_state.current_key_index += 1
                         st.session_state.usage_counter = 0
@@ -136,24 +131,27 @@ if 'recap_script' in st.session_state:
                     audio_output = "recap_audio.mp3"
                     asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
                     st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
-                    st.session_state.audio_ready = True
+                    st.session_state.last_sync_speed = st.session_state.v_speed # လက်ရှိ speed ကို မှတ်ထားမယ်
                 except Exception as e:
                     st.error(f"Audio Error: {str(e)}")
 
     if 'actual_audio_dur' in st.session_state:
         with col_btn2:
-            if st.button("⚡ Auto Sync Speed (ဗီဒီယိုနှင့် အချိန်ညှိမည်)"):
+            if st.button("⚡ Auto Sync Speed"):
                 if video_duration > 0:
-                    # အသံဖိုင်ကြာချိန် နှင့် ဗီဒီယိုကြာချိန် အချိုးကို တွက်ချက်ခြင်း
-                    ratio = st.session_state.actual_audio_dur / video_duration
-                    # Slider အသစ်ကို တွက်ချက်ပြီး update လုပ်ခြင်း (min 0.3, max 2.0)
-                    st.session_state.v_speed = max(0.3, min(2.0, round(st.session_state.v_speed * ratio, 2)))
+                    # Logic အမှန်: (လက်ရှိအသံကြာချိန် * လက်ရှိနှုန်း) / ဗီဒီယိုကြာချိန် = လိုအပ်သောနှုန်း
+                    current_audio_dur = st.session_state.actual_audio_dur
+                    current_speed = st.session_state.last_sync_speed
+                    
+                    new_speed = (current_audio_dur * current_speed) / video_duration
+                    st.session_state.v_speed = max(0.3, min(2.0, round(new_speed, 2)))
+                    
+                    st.success(f"Speed ကို {st.session_state.v_speed} သို့ ညှိလိုက်ပါပြီ။ '🔊 အသံဖိုင် ထုတ်မည်' ကို ထပ်နှိပ်ပါ။")
+                    time.sleep(1)
                     st.rerun()
 
     if 'actual_audio_dur' in st.session_state:
         st.audio("recap_audio.mp3")
-        
-        # ကွာခြားချက်ပြ Metric များ
         m1, m2, m3 = st.columns(3)
         m1.metric("Video Duration", f"{int(video_duration)} s")
         m2.metric("MP3 Duration", f"{int(st.session_state.actual_audio_dur)} s")
@@ -161,4 +159,4 @@ if 'recap_script' in st.session_state:
         m3.metric("Difference", f"{int(diff)} s", delta=f"{int(diff)} s", delta_color="inverse")
         
         with open("recap_audio.mp3", "rb") as f:
-            st.download_button("Download Synced MP3", f, file_name="recap.mp3")
+            st.download_button("Download MP3", f, file_name="recap.mp3")
