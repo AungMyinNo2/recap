@@ -25,8 +25,8 @@ async def generate_audio(text, output_path, rate="+0%"):
 
 def get_recap_script(video_path, duration):
     """Gemini AI ကို Script ရေးခိုင်းခြင်း"""
-    # Model နာမည်ကို 'models/' ရှေ့ကခံပြီး အပြည့်အစုံ ခေါ်ထားပါတယ်
-    model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+    # Model နာမည်ကို flash-latest သို့ ပြောင်းလဲထားပါသည်
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash-latest")
     
     # ၁။ Video Upload
     video_file = genai.upload_file(path=video_path)
@@ -52,14 +52,13 @@ def get_recap_script(video_path, duration):
     # ၄။ Content ထုတ်လုပ်ခြင်း
     response = model.generate_content([prompt, video_file])
     
-    # ပြီးရင် server ပေါ်က file ကို ဖျက်ပါ
+    # Server ပေါ်က file ကို ဖျက်ပါ
     genai.delete_file(video_file.name)
     
     return response.text
 
 # --- UI Interface ---
 st.title("🎬 AI Movie Recap (Burmese Sync)")
-st.write("Video တင်ပေးပါ၊ AI က ကြာချိန်နဲ့အကိုက် မြန်မာအသံဖိုင် ထုတ်ပေးပါမယ်။")
 
 v_file = st.file_uploader("Video ရွေးချယ်ပါ", type=["mp4", "mov", "avi"])
 
@@ -85,7 +84,7 @@ if v_file:
                 mp3_out = "recap.mp3"
                 asyncio.run(generate_audio(script_text, mp3_out))
 
-                # ၃။ Sync Logic (Duration Matching)
+                # ၃။ Sync Logic
                 audio_clip = AudioFileClip(mp3_out)
                 actual_dur = audio_clip.duration
                 
@@ -103,14 +102,18 @@ if v_file:
                 audio_clip.write_audiofile(wav_out, codec='pcm_s16le', verbose=False, logger=None)
                 audio_clip.close()
 
-                # ၅။ ရလဒ်ပြသခြင်း
+                # ၅။ ရလဒ်ပြခြင်း
                 st.success(f"✅ အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!")
                 st.audio(mp3_out)
                 with open(wav_out, "rb") as f:
                     st.download_button("Download WAV", f, "recap_audio.wav")
 
             except Exception as e:
-                st.error(f"Error တက်သွားပါတယ်: {str(e)}")
+                # 404 error ကို ပိုမိုရှင်းလင်းစွာ ပြသရန်
+                if "404" in str(e):
+                    st.error("Error 404: AI Model နှင့် ချိတ်ဆက်မရပါ။ ကျေးဇူးပြု၍ Manage App > Reboot App ကို တစ်ချက်နှိပ်ပေးပါ။")
+                else:
+                    st.error(f"Error: {str(e)}")
             finally:
                 v_clip.close()
                 if os.path.exists(video_path):
