@@ -23,6 +23,7 @@ if 'last_sync_speed' not in st.session_state: st.session_state.last_sync_speed =
 with st.sidebar:
     st.header("⚙️ Settings")
     try:
+        # Dashboard > Secrets ထဲမှာ GEMINI_KEYS ဆိုပြီး အသေထည့်ထားရပါမယ်
         keys_from_secrets = st.secrets["GEMINI_KEYS"]
         api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
         
@@ -31,7 +32,7 @@ with st.sidebar:
         st.success(f"🔑 Key {idx + 1} ကို အသုံးပြုနေပါသည်")
         st.info(f"💡 Key {len(api_keys)} ခု အသင့်ရှိနေပါသည်")
     except:
-        st.error("Secrets ထဲမှာ GEMINI_KEYS မတွေ့ပါ။ Dashboard > Secrets မှာ အရင်ထည့်ပါ။")
+        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard Settings > Secrets မှာ သေချာထည့်ပါ။")
         api_keys = []
         active_key = None
 
@@ -42,10 +43,10 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    # Model Mapping (UI နာမည် နှင့် API နာမည် တွဲခြင်း)
+    # Model ရွေးချယ်မှု
     model_mapping = {
-        "gemini-2.5-flash (Thinking)": "gemini-2.0-flash-thinking-exp-01-21",
         "gemini-2.0-flash": "gemini-2.0-flash",
+        "gemini-2.5-flash (Thinking)": "gemini-2.0-flash-thinking-exp-01-21",
         "gemini-1.5-flash": "gemini-1.5-flash"
     }
     model_ui_choice = st.selectbox("AI Model (Recap အတွက်)", list(model_mapping.keys()))
@@ -65,7 +66,6 @@ def get_mp3_duration(file_path):
     except: return 0
 
 def clean_script(text):
-    # Thinking tags နှင့် timestamps များ ရှင်းထုတ်ခြင်း
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
     text = re.sub(r'<[^>]+>', '', text)
     return re.sub(r'\s+', ' ', text).strip()
@@ -101,7 +101,7 @@ with col2:
                 current_key = api_keys[st.session_state.current_key_index % len(api_keys)]
                 try:
                     genai.configure(api_key=current_key)
-                    with st.spinner(f"Key {st.session_state.current_key_index % len(api_keys) + 1} ဖြင့် {model_ui_choice} ကို သုံးနေပါသည်..."):
+                    with st.spinner(f"Key {st.session_state.current_key_index % len(api_keys) + 1} ကို စမ်းသပ်နေပါသည်..."):
                         model = genai.GenerativeModel(model_choice)
                         video_file = genai.upload_file(path=st.session_state.video_path)
                         while video_file.state.name == "PROCESSING": 
@@ -109,32 +109,22 @@ with col2:
                             video_file = genai.get_file(video_file.name)
                         
                         target_words = int((video_duration / 60) * 140)
-                        prompt = f"""
-                        ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
-                        ၁။ Narrative Style ပဲ ရေးပါ။ Timestamps မပါစေရ။
-                        ၂။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတဲ့ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
-                        ၃။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
-                        ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-                        ၅။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
-                        """
+                        prompt = f"ဒီဗီဒီယိုကို ကြည့်ပြီး Recap Script ရေးပေးပါ။ စာလုံးရေ {target_words} ခန့်။"
                         response = model.generate_content([prompt, video_file])
                         st.session_state['recap_script'] = clean_script(response.text)
                         success = True
                         break 
                 except Exception as e:
-                    if "429" in str(e) or "404" in str(e):
-                        st.warning(f"Key {st.session_state.current_key_index % len(api_keys) + 1} တွင် ပြဿနာရှိနေပါသည်။ နောက် Key တစ်ခုသို့ ပြောင်းနေပါသည်။")
-                        st.session_state.current_key_index += 1
-                        time.sleep(1)
-                        continue 
-                    else:
-                        st.error(f"Error: {str(e)}")
-                        break
+                    err = str(e)
+                    st.error(f"❌ Key {st.session_state.current_key_index % len(api_keys) + 1} Error: {err}")
+                    st.session_state.current_key_index += 1 # နောက် Key တစ်ခုသို့ ပြောင်းမည်
+                    time.sleep(2)
+                    continue 
             
             if success:
                 st.rerun()
             else:
-                st.error("Key အားလုံး အဆင်မပြေဖြစ်နေပါသည်။ ၁ မိနစ်ခန့်စောင့်ပါ သို့မဟုတ် Key အသစ်များ ထပ်ထည့်ပါ။")
+                st.warning("⚠️ Key အားလုံး အဆင်မပြေဖြစ်နေပါသည်။ ၁ မိနစ်စောင့်ပါ သို့မဟုတ် Gmail မတူသော Key အသစ်များ ထည့်ပါ။")
 
 # --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
