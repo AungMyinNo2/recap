@@ -18,7 +18,7 @@ import time
 from moviepy.editor import VideoFileClip, AudioFileClip
 
 # --- Configuration ---
-st.set_page_config(page_title="AI Movie Recap Pro", layout="wide", page_icon="🎙️")
+st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon="🎙️")
 
 # --- API Key Rotation Logic ---
 def get_model_with_rotation():
@@ -67,7 +67,7 @@ async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    """API Rotation ပါဝင်သော Script Generation (Prompt ပြုပြင်ပြီးသား)"""
+    """API Rotation ပါဝင်သော Script Generation"""
     keys = st.secrets["GEMINI_KEYS"]
     
     for _ in range(len(keys)):
@@ -80,7 +80,7 @@ def get_recap_script(video_path):
                 time.sleep(2)
                 video_file = genai.get_file(video_file.name)
             
-            # --- ပြုပြင်ထားသော Prompt (Energetic အချက်ကို ဖယ်ရှားထားသည်) ---
+            # --- ပြုပြင်ထားသော Prompt ---
             prompt = """
             ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
             စည်းကမ်းချက်-
@@ -155,4 +155,19 @@ if v_file:
                     speed_change = max(min(speed_change, 50), -50) 
                     final_rate = f"{speed_change:+}%"
                     
-                    final_mp3 = "final_recap_mp
+                    # ဒီနေရာမှာ Error တက်ခဲ့တဲ့ Quote ကို ပြင်ဆင်ထားပါတယ်
+                    final_mp3 = "final_recap.mp3"
+                    asyncio.run(generate_audio_file(
+                        st.session_state.recap_script, final_mp3, voice_id, 
+                        rate=final_rate, 
+                        volume=volume_str
+                    ))
+
+                    st.success(f"✅ Sync ပြီးပါပြီ! (နှုန်းညှိချက်: {final_rate})")
+                    st.audio(final_mp3)
+                    with open(final_mp3, "rb") as f:
+                        st.download_button("Download Recap MP3", f, "movie_recap.mp3")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+    
+    v_clip.close()
