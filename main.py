@@ -8,6 +8,18 @@ import time
 import re
 from moviepy.editor import VideoFileClip
 from mutagen.mp3 import MP3
+# --- API Keys သိမ်းဆည်းရန် ဖိုင်အမည် ---
+KEYS_FILE = "api_keys.txt"
+
+def save_keys(keys_text):
+    with open(KEYS_FILE, "w") as f:
+        f.write(keys_text)
+
+def load_keys():
+    if os.path.exists(KEYS_FILE):
+        with open(KEYS_FILE, "r") as f:
+            return f.read()
+    return ""
 
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Pro AI", layout="wide")
