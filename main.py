@@ -20,10 +20,7 @@ with st.sidebar:
 
 # API Configuration
 if api_key:
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        st.error(f"API Configuration Error: {e}")
+    genai.configure(api_key=api_key)
 
 # --- Functions ---
 
@@ -32,36 +29,45 @@ async def generate_audio(text, output_file, voice):
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_file)
 
+def get_model_response(content_list):
+    """Model နာမည် ပုံစံအမျိုးမျိုးဖြင့် စမ်းသပ်ခေါ်ဆိုခြင်း (404 Error ကာကွယ်ရန်)"""
+    # စမ်းသပ်မည့် Model နာမည်များ
+    model_names = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'models/gemini-1.5-flash']
+    
+    last_error = ""
+    for name in model_names:
+        try:
+            model = genai.GenerativeModel(model_name=name)
+            response = model.generate_content(content_list)
+            return response.text
+        except Exception as e:
+            last_error = str(e)
+            continue # နောက်ထပ် Model နာမည်တစ်ခုဖြင့် ထပ်စမ်းမည်
+            
+    raise Exception(f"Model အားလုံး Error တက်နေပါသည်: {last_error}")
+
 def process_video_with_gemini(video_path):
     """Video ကို Gemini ဆီပို့ပြီး Script ထုတ်ခြင်း"""
-    # Model name ကို အသစ်ဆုံး version ပြောင်းသုံးထားပါတယ်
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    
-    # Video Upload
+    # Video Upload to Gemini Cloud
     video_file = genai.upload_file(path=video_path)
     
     status_text = st.empty()
-    status_text.write("⏳ Gemini က ဗီဒီယိုကို စစ်ဆေးနေပါတယ်။ ခေတ္တစောင့်ပါ။")
+    status_text.info("⏳ Gemini က ဗီဒီယိုကို စစ်ဆေးနေပါတယ်။ (၁ မိနစ်ခန့် ကြာနိုင်သည်)")
     
     # Wait for processing
     while video_file.state.name == "PROCESSING":
-        time.sleep(2)
+        time.sleep(3)
         video_file = genai.get_file(video_file.name)
     
     if video_file.state.name == "FAILED":
-        st.error("ဗီဒီယိုကို ဖတ်လို့မရပါ။ ဖိုင်အမျိုးအစား ပြန်စစ်ပါ။")
-        return None
+        return "Video processing failed on Gemini side."
 
-    status_text.write("✅ ဗီဒီယိုဖတ်ပြီးပါပြီ။ Script ရေးသားနေပါတယ်။")
+    status_text.success("✅ ဗီဒီယိုဖတ်ပြီးပါပြီ။ Script ရေးသားနေပါတယ်။")
 
-    prompt = """
-    မင်းက ကျွမ်းကျင်တဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
-    ဒီဗီဒီယိုကို ကြည့်ပြီး စိတ်ဝင်စားစရာကောင်းတဲ့ Recap Script တစ်ခုကို မြန်မာလို ရေးပေးပါ။
-    အရေးကြီးတဲ့ အခန်းတွေကို အစအဆုံး အသေးစိတ် ရေးပေးပါ။
-    """
+    prompt = "မင်းက ကျွမ်းကျင်တဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ ဒီဗီဒီယိုကို ကြည့်ပြီး စိတ်ဝင်စားစရာကောင်းတဲ့ Recap Script တစ်ခုကို မြန်မာလို အသေးစိတ် ရေးပေးပါ။"
     
-    response = model.generate_content([prompt, video_file])
-    return response.text
+    # Model ကို ပုံစံမျိုးစုံဖြင့် ခေါ်ယူခြင်း
+    return get_model_response([prompt, video_file])
 
 # --- UI Layout ---
 
@@ -87,9 +93,7 @@ with col2:
             try:
                 with st.spinner("AI လုပ်ဆောင်နေပါတယ်..."):
                     if transcript_input.strip():
-                        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                        response = model.generate_content(f"Rewrite this as a Burmese Movie Recap script: {transcript_input}")
-                        final_script = response.text
+                        final_script = get_model_response([f"Rewrite this as an exciting Burmese Movie Recap script: {transcript_input}"])
                     elif uploaded_file:
                         final_script = process_video_with_gemini(video_path)
                     else:
@@ -100,8 +104,8 @@ with col2:
                         st.session_state['recap_script'] = final_script
                         st.success("Script ရေးသားပြီးပါပြီ!")
             except Exception as e:
-                # Error ကို သေချာပြရန်
                 st.error(f"Error Details: {str(e)}")
+                st.info("အကြံပြုချက်: API Key အသစ်တစ်ခုဖြင့် ထပ်စမ်းကြည့်ပါ။")
 
 # --- Result Section ---
 if 'recap_script' in st.session_state:
