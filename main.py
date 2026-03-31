@@ -25,12 +25,16 @@ with st.sidebar:
     try:
         keys_from_secrets = st.secrets["GEMINI_KEYS"]
         api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
+        
+        # Key လှည့်သုံးမည့် အပိုင်း
         idx = st.session_state.current_key_index % len(api_keys)
         active_key = api_keys[idx]
-        st.success(f"🔑 Key {idx + 1} အသင့်ဖြစ်ပါပြီ")
+        st.success(f"🔑 Key {idx + 1} ကို သုံးနေပါသည်")
+        st.info(f"📊 {idx + 1} ခုမြောက် Key အသုံးပြုမှု: {st.session_state.usage_counter}/10")
         genai.configure(api_key=active_key)
     except:
-        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard > Secrets မှာ အရင်ထည့်ပါ။")
+        st.error("Secrets ထဲမှာ Key မတွေ့ပါ။ Dashboard > Secrets မှာ ထည့်ပါ။")
+        api_keys = []
         active_key = None
 
     voice_source = st.radio("အသံအရင်းအမြစ်", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
@@ -40,7 +44,8 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    model_choice = st.selectbox("AI Model", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"])
+    # Model Name ပြင်ဆင်ခြင်း (2.5 မရှိသေးပါ၊ 1.5 သို့မဟုတ် 2.0 ကို သုံးပါ)
+    model_choice = st.selectbox("AI Model", ["gemini-1.5-flash", "gemini-2.0-flash"])
     
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
@@ -93,29 +98,29 @@ with col2:
                         video_file = genai.get_file(video_file.name)
                     
                     target_words = int((video_duration / 60) * 140)
-                    
-                    # Indentation မှန်ကန်အောင် ပြင်ဆင်ထားသော Prompt
-                    prompt = f"""
-                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
-                    
-                    လိုအပ်ချက်များ (Strict Requirements):
-                    ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
-                    ၂။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတဲ့ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
-                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
-                    ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-                    ၅။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
-                    """
+                    prompt = f"""ဒီဗီဒီယိုကို ကြည့်ပြီး Recap Script ရေးပေးပါ။ Timestamps မပါစေရ။ energetic ဖြစ်ပါစေ။ 
+                    အဆုံးမှာ 'အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
+                    ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။"""
                     
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
-                    st.session_state.usage_counter += 1
                     
+                    # ကောင်တာ တိုးခြင်း
+                    st.session_state.usage_counter += 1
                     if st.session_state.usage_counter >= 10:
                         st.session_state.current_key_index += 1
                         st.session_state.usage_counter = 0
                     st.rerun()
+                    
             except Exception as e:
-                st.error(f"Script Error: {str(e)}")
+                error_msg = str(e)
+                if "429" in error_msg:
+                    st.warning("⚠️ လက်ရှိ Key မှာ Quota ပြည့်သွားပါပြီ။ နောက် Key တစ်ခုသို့ အလိုအလျောက် ပြောင်းလဲနေပါသည်။ ခေတ္တစောင့်ပါ...")
+                    st.session_state.current_key_index += 1
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(f"Script Error: {error_msg}")
 
 # --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
