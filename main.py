@@ -12,18 +12,17 @@ from mutagen.mp3 import MP3
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Pro AI", layout="wide")
 
-st.title("🎬 Burmese Movie Recap AI (YouTuber Style)")
+st.title("🎬 Burmese Movie Recap AI (Auto-Fix Version)")
 
 # Sidebar Settings
 with st.sidebar:
     st.header("⚙️ Settings")
     api_key = st.text_input("Gemini API Key:", type="password")
     
-    # 429 Error သက်သာစေရန် Model ရွေးချယ်မှု ပြန်ထည့်ပေးထားပါသည်
-    model_choice = st.selectbox(
-        "AI Model ကိုရွေးပါ (429 Error တက်ပါက 1.5 ကို သုံးပါ)", 
-        ["gemini-1.5-flash", "gemini-2.0-flash"]
-    )
+    # သင့် API Key တွင် အလုပ်လုပ်နိုင်သော Model များစာရင်း
+    # 404 Error မတက်စေရန် ပုံစံမျိုးစုံ စမ်းသပ်ပါမည်
+    model_options = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    model_choice = st.selectbox("AI Model ရွေးချယ်ပါ", model_options)
     
     if 'v_speed' not in st.session_state:
         st.session_state.v_speed = 1.0
@@ -49,7 +48,7 @@ def get_mp3_duration(file_path):
     return audio.info.length
 
 def clean_script(text):
-    """စာသားထဲမှ အချိန်များနှင့် စက္ကန့်/မိနစ် များကို အလိုအလျောက် ဖြတ်ထုတ်ခြင်း"""
+    """စာသားထဲမှ အချိန်များနှင့် မိနစ်များကို ဖြတ်ထုတ်ခြင်း"""
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -60,7 +59,7 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     st.write("### 📤 Step 1: Video တင်ပါ")
-    uploaded_file = st.file_uploader("Video တင်ပါ", type=["mp4", "mov", "avi"])
+    uploaded_file = st.file_uploader("Video (MP4, MOV)", type=["mp4", "mov", "avi"])
     video_duration = 0
     if uploaded_file:
         st.video(uploaded_file)
@@ -79,53 +78,41 @@ with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
         if not api_key: 
-            st.error("Sidebar တွင် API Key အရင်ထည့်ပါ။")
-        elif not uploaded_file: 
-            st.warning("ဗီဒီယို အရင်တင်ပါ။")
+            st.error("API Key အရင်ထည့်ပါ။")
         else:
             try:
-                with st.spinner(f"{model_choice} စနစ်ဖြင့် YouTuber Recap ရေးသားနေပါသည်..."):
+                with st.spinner(f"{model_choice} စနစ်ဖြင့် လုပ်ဆောင်နေပါသည်..."):
+                    # Model ခေါ်ယူမှု (Try-Catch ဖြင့် 404 ကို ကာကွယ်ခြင်း)
                     model = genai.GenerativeModel(model_choice)
-                    video_file = genai.upload_file(path=st.session_state.video_path)
                     
+                    video_file = genai.upload_file(path=st.session_state.video_path)
                     while video_file.state.name == "PROCESSING": 
                         time.sleep(2)
                         video_file = genai.get_file(video_file.name)
                     
                     target_words = int((video_duration / 60) * 140)
-                    
                     prompt = f"""
-                    မင်းက အရမ်းနာမည်ကြီးတဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
-                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
-                    
-                    လိုအပ်ချက်များ (Strict Requirements):
-                    ၁။ 00:00 (Timestamps) တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ(လုံးဝ) မထည့်ပါနဲ့။ စာသားသက်သက် Narrative Style ပဲ ရေးပါ။
-                    ၂။ စကားပြောပုံစံက အရမ်း energetic ဖြစ်ပါစေ။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ', 'ဇာတ်လမ်းလေးကတော့' စတဲ့ ဆွဲဆောင်မှုရှိတဲ့ စကားလုံးတွေ သုံးပါ။
-                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း YouTuber တစ်ယောက် Recap ပြောပြနေသလို ရေးပေးပါ။
-                    ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+                    မင်းက YouTuber Recap ပြောပြနေသလို energetic ဖြစ်တဲ့ မြန်မာ Movie Recap Script တစ်ခု ရေးပေးပါ။
+                    ၁။ အချိန် (00:00) တွေ လုံးဝမပါစေရ။ စာသားသက်သက်ပဲ ရေးပါ။
+                    ၂။ ဇာတ်လမ်းကို စိတ်လှုပ်ရှားစရာကောင်းအောင် မြန်မာလို အသေးစိတ် ရေးပေးပါ။
+                    ၃။ ဗီဒီယိုကြာချိန် {int(video_duration)} စက္ကန့်အတွက် စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။
                     """
-                    
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
                     st.success("အောင်မြင်စွာ ရေးသားပြီးပါပြီ!")
             except Exception as e: 
-                if "429" in str(e):
-                    st.error("Error 429: အခမဲ့အသုံးပြုနိုင်သည့် အကြိမ်ရေ ပြည့်သွားပါပြီ။ ၁ မိနစ်ခန့်စောင့်ပါ သို့မဟုတ် Sidebar တွင် 'gemini-1.5-flash' သို့ ပြောင်းလဲအသုံးပြုကြည့်ပါ။")
-                else:
-                    st.error(f"Error Details: {str(e)}")
+                st.error(f"Error: {str(e)}")
+                st.info("အကြံပြုချက်: Sidebar တွင် Model အမျိုးအစားကို gemini-2.0-flash သို့မဟုတ် gemini-2.5-flash သို့ ပြောင်းလဲစမ်းသပ်ကြည့်ပါ။")
 
-# --- Output & Sync Section ---
+# --- Result Section ---
 if 'recap_script' in st.session_state:
     st.divider()
-    st.write("### 📜 Generated YouTuber Recap Script")
-    
     final_clean = clean_script(st.session_state['recap_script'])
-    edited_script = st.text_area("Script ကို လိုအပ်သလို ပြင်ဆင်ပါ (အချိန်စာသားများ မပါစေရ):", final_clean, height=250)
+    edited_script = st.text_area("Generated Script:", final_clean, height=250)
     st.session_state['recap_script'] = edited_script
 
-    btn_col1, btn_col2 = st.columns(2)
-    
-    with btn_col1:
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
         if st.button("🔊 အသံဖိုင် (Audio) ထုတ်မည်"):
             with st.spinner("အသံဖိုင် ဖန်တီးနေပါသည်..."):
                 audio_output = "recap_audio.mp3"
@@ -133,11 +120,10 @@ if 'recap_script' in st.session_state:
                 st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
 
     if 'actual_audio_dur' in st.session_state:
-        with btn_col2:
-            if st.button("⚡ Auto Sync Speed (ဗီဒီယိုနှင့် အချိန်ညှိမည်)"):
+        with col_btn2:
+            if st.button("⚡ Auto Sync Speed"):
                 ratio = st.session_state.actual_audio_dur / video_duration
-                new_speed = st.session_state.v_speed * ratio
-                st.session_state.v_speed = max(0.3, min(2.0, round(new_speed, 2)))
+                st.session_state.v_speed = max(0.3, min(2.0, round(st.session_state.v_speed * ratio, 2)))
                 st.rerun()
 
     if 'actual_audio_dur' in st.session_state:
