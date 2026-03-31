@@ -143,7 +143,7 @@ with col2:
                     video_file = genai.upload_file(path=st.session_state.video_path)
                     while video_file.state.name == "PROCESSING": time.sleep(2); video_file = genai.get_file(video_file.name)
                     
-                    target_words = int((video_duration / 60) * 140)
+                    target_words = int((video_duration / 60) * 200)
                     prompt = f"""
                     ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် မြန်မာ Movie Recap Script ရေးပေးပါ။
                     ၁။ Timestamps တွေ လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
