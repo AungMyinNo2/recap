@@ -28,22 +28,24 @@ voice_choice = st.sidebar.radio(
 voice_id = "my-MM-NilarNeural" if "နီလာ" in voice_choice else "my-MM-ThihaNeural"
 
 # ၂။ အသံအတိုးအကျယ် (Volume Control)
-# edge-tts က volume ကို +0% or -10% ပုံစံမျိုး လက်ခံပါတယ်
 volume_value = st.sidebar.slider("အသံ အတိုး/အလျော့ (%)", -50, 50, 0, step=10)
 volume_str = f"{volume_value:+}%"
 
-st.sidebar.info("💡 **Sync System:** Video ကြာချိန်နဲ့ ကိုက်အောင် Rate (အနှေးအမြန်) ကို AI က အလိုအလျောက် ညှိပေးပါမည်။")
+st.sidebar.info("💡 **Sync System:** Video ကြာချိန်နဲ့ ကိုက်အောင် AI က အနှေးအမြန်ကို အလိုအလျောက် ညှိပေးပါမည်။")
 
 # --- Functions ---
 
 async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"):
-    """Edge-TTS ဖြင့် အသံဖိုင် ထုတ်ပေးခြင်း (Volume & Rate ပါဝင်သည်)"""
+    """Edge-TTS ဖြင့် အသံဖိုင် ထုတ်ပေးခြင်း"""
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     await communicate.save(output_path)
 
 def get_recap_script(video_path, duration):
     """Gemini 2.5 Flash ကို Script ရေးခိုင်းခြင်း"""
     model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+    
+    # မြန်မာစာလုံးရေ ခန့်မှန်းတွက်ချက်ခြင်း (၁ စက္ကန့်လျှင် ၂ လုံးနှုန်းခန့်)
+    target_words = duration * 2
     
     video_file = genai.upload_file(path=video_path)
     st.info(f"🤖 Gemini 2.5 Flash က Video ကို ဖတ်နေပါတယ်...")
@@ -52,14 +54,17 @@ def get_recap_script(video_path, duration):
         time.sleep(2)
         video_file = genai.get_file(video_file.name)
     
+    # ပြုပြင်ထားသော Prompt
     prompt = f"""
     ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
+    
     စည်းကမ်းချက်-
     ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
-                    ၂။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတဲ့ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
-                    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
-                    ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-                    ၅။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+    ၂။ 'ကဲ... ဒီနေ့မှာတော့'၊ 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတဲ့ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
+    ၃။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
+    ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
+    ၅။ ဗီဒီယိုကြာချိန်က {duration} စက္ကန့် ဖြစ်လို့ မြန်မာစာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+    ၆။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
     """
     
     response = model.generate_content([prompt, video_file])
@@ -84,13 +89,13 @@ if v_file:
     if st.button("🚀 Start Recap & Auto Sync"):
         with st.spinner("AI က Recap လုပ်နေပါတယ်..."):
             try:
-                # ၁။ Script ရယူခြင်း
+                # ၁။ Script ရယူခြင်း (v_dur ကို duration အဖြစ် ပို့လိုက်သည်)
                 script_text = get_recap_script(video_path, v_dur)
                 st.subheader("📝 Recap Script (Myanmar):")
                 st.success(script_text)
 
                 # ၂။ အခြေခံအသံဖိုင်ကို အရင်ထုတ်ခြင်း (ကြာချိန်တိုင်းရန်)
-                mp3_temp = "temp.mp3"
+                mp3_temp = os.path.join(tempfile.gettempdir(), "temp.mp3")
                 asyncio.run(generate_audio_file(script_text, mp3_temp, voice_id))
                 
                 audio_clip = AudioFileClip(mp3_temp)
@@ -98,12 +103,11 @@ if v_file:
                 audio_clip.close()
 
                 # ၃။ Auto Sync Logic (ကြာချိန်ကိုက်အောင် Rate တွက်ခြင်း)
-                # Rate formula: (Initial / Target - 1) * 100
                 speed_change = int((initial_dur / v_dur - 1) * 100)
                 speed_change = max(min(speed_change, 50), -50) # limit
                 final_rate = f"{speed_change:+}%"
                 
-                # ၄။ Final Audio ထုတ်ခြင်း (Sync Rate နှင့် Volume အတိုးအကျော့ပါဝင်သည်)
+                # ၄။ Final Audio ထုတ်ခြင်း
                 final_mp3 = "final_recap.mp3"
                 asyncio.run(generate_audio_file(
                     script_text, final_mp3, voice_id, 
@@ -124,3 +128,5 @@ if v_file:
                 v_clip.close()
                 if os.path.exists(video_path):
                     os.remove(video_path)
+                if os.path.exists(mp3_temp):
+                    os.remove(mp3_temp)
