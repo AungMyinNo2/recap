@@ -1,3 +1,12 @@
+# --- Python 3.13+ Compatibility Fix (ဒီအပိုင်းက အပေါ်ဆုံးမှာ ရှိရပါမယ်) ---
+try:
+    import audioop
+except ImportError:
+    import audioop_lpmud as audioop
+    import sys
+    sys.modules['audioop'] = audioop
+# -----------------------------------------------------------------------
+
 import streamlit as st
 import google.generativeai as genai
 import edge_tts
@@ -31,10 +40,11 @@ def get_recap_script(input_data, duration, input_type="video"):
     prompt = f"""
     သင်သည် ကျွမ်းကျင်သော Movie Recap တင်ဆက်သူဖြစ်သည်။
     ပေးထားသော {input_type} ကို အခြေခံ၍ စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Recap Script ကို ရေးပေးပါ။
+    
     စည်းကမ်းချက်-
     ၁။ အသံထွက်ဖတ်ပါက စုစုပေါင်းကြာချိန် {duration} စက္ကန့် အတိအကျ ဖြစ်ရမည်။
     ၂။ စကားလုံး အထားအသိုကို ဆွဲဆောင်မှုရှိပါစေ။
-    ၃။ စာသားသက်သက်သာ ပြန်ပေးပါ။
+    ၃။ စာသားသက်သက်သာ ပြန်ပေးပါ။ (စာသားထဲမှာ စက္ကန့်တွေ၊ မှတ်ချက်တွေ မထည့်ပါနဲ့)
     """
     
     if input_type == "video":
@@ -76,6 +86,8 @@ def run_process(data, dur, dtype):
             if abs(dur - actual_dur) > 1:
                 # Speed % ကို တွက်ချက်ခြင်း
                 speed_change = int((actual_dur / dur - 1) * 100)
+                # limit speed change to +/- 50% for quality
+                speed_change = max(min(speed_change, 50), -50)
                 final_rate = f"{speed_change:+}%"
                 asyncio.run(generate_audio(script_text, mp3_out, rate=final_rate))
 
@@ -85,7 +97,7 @@ def run_process(data, dur, dtype):
             final_audio.export(wav_out, format="wav")
 
             # 5. Result ပြခြင်း
-            st.success(f"✅ အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ! (Target: {dur}s | Actual: {dur}s)")
+            st.success(f"✅ အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ! (Target: {dur}s)")
             
             col1, col2 = st.columns(2)
             with col1:
