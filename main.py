@@ -1,10 +1,17 @@
+import os
+import sys
+
 # --- Python 3.13+ Compatibility Fix ---
+# audioop က Python 3.13 မှာ မပါတော့လို့ audioop-lpmud ကို အစားထိုးသုံးတာဖြစ်ပါတယ်
 try:
     import audioop
 except ImportError:
-    import audioop_lpmud as audioop
-    import sys
-    sys.modules['audioop'] = audioop
+    try:
+        import audioop_lpmud as audioop
+        sys.modules['audioop'] = audioop
+    except ImportError:
+        # Streamlit က သွင်းမပေးသေးရင် error မတက်အောင် ခဏကျော်ထားမယ်
+        audioop = None
 # --------------------------------------
 
 import streamlit as st
@@ -12,7 +19,6 @@ import google.generativeai as genai
 from google.api_core import exceptions
 import edge_tts
 import asyncio
-import os
 import tempfile
 import time
 from moviepy.editor import VideoFileClip, AudioFileClip
@@ -22,7 +28,6 @@ st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon=
 
 # --- API Key Rotation Logic ---
 def get_model_with_rotation():
-    """Secrets ထဲက Key တွေကို တစ်ခုပြီးတစ်ခု စမ်းသုံးပေးမည့် Function"""
     if "GEMINI_KEYS" not in st.secrets:
         st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List) ကို အရင်ထည့်ပေးပါ။")
         st.stop()
@@ -47,7 +52,6 @@ def get_model_with_rotation():
     st.error("❌ API Keys အားလုံး Limit ပြည့်နေပါသည် သို့မဟုတ် အလုပ်မလုပ်ပါ။")
     st.stop()
 
-# Session State Initialize (Script မှတ်ထားရန်)
 if 'recap_script' not in st.session_state:
     st.session_state.recap_script = ""
 
@@ -61,15 +65,12 @@ volume_str = f"{volume_value:+}%"
 st.sidebar.markdown(f"🔑 **API Status:** Key #{st.session_state.get('current_key_index', 0) + 1} active")
 
 # --- Functions ---
-
 async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"):
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    """API Rotation ပါဝင်သော Script Generation"""
     keys = st.secrets["GEMINI_KEYS"]
-    
     for _ in range(len(keys)):
         model, active_key = get_model_with_rotation()
         try:
@@ -80,7 +81,6 @@ def get_recap_script(video_path):
                 time.sleep(2)
                 video_file = genai.get_file(video_file.name)
             
-            # --- ပြုပြင်ထားသော Prompt ---
             prompt = """
             ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
             စည်းကမ်းချက်-
@@ -96,7 +96,6 @@ def get_recap_script(video_path):
             return response.text
 
         except exceptions.ResourceExhausted:
-            st.warning(f"⚠️ Key #{st.session_state.current_key_index + 1} Limit ပြည့်သွားသဖြင့် နောက်တစ်ခုသို့ ပြောင်းနေသည်...")
             st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(keys)
             continue
         except Exception as e:
@@ -122,16 +121,13 @@ if v_file:
         st.video(v_file)
         st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur}** စက္ကန့်")
     
-    # ၁။ Script ထုတ်ယူခြင်း
     if st.button("📝 ၁။ Generate Recap Script"):
         with st.spinner("AI က Script ရေးနေပါတယ်..."):
             st.session_state.recap_script = get_recap_script(video_path)
 
-    # ၂။ Script ပြင်ဆင်ခြင်း UI
     if st.session_state.recap_script:
         st.subheader("🖋️ Script ကို ပြင်ဆင်ပြီး စာလုံးရေစစ်ပါ")
-        char_count = len(st.session_state.recap_script)
-        st.caption(f"လက်ရှိစာလုံးရေ: {char_count}")
+        st.caption(f"လက်ရှိစာလုံးရေ: {len(st.session_state.recap_script)}")
         
         st.session_state.recap_script = st.text_area(
             "Edit Script:", 
@@ -139,7 +135,6 @@ if v_file:
             height=300
         )
 
-        # ၃။ အသံဖိုင်ထုတ်ခြင်း
         if st.button("🚀 ၂။ Generate Audio & Auto Sync"):
             with st.spinner("Sync ညှိနေပါတယ်..."):
                 try:
@@ -150,12 +145,10 @@ if v_file:
                     initial_dur = audio_clip.duration
                     audio_clip.close()
 
-                    # Auto Sync Logic
                     speed_change = int((initial_dur / v_dur - 1) * 100)
                     speed_change = max(min(speed_change, 50), -50) 
                     final_rate = f"{speed_change:+}%"
                     
-                    # ဒီနေရာမှာ Error တက်ခဲ့တဲ့ Quote ကို ပြင်ဆင်ထားပါတယ်
                     final_mp3 = "final_recap.mp3"
                     asyncio.run(generate_audio_file(
                         st.session_state.recap_script, final_mp3, voice_id, 
