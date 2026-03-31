@@ -26,7 +26,6 @@ if 'current_key_index' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # API Key Rotation
     keys_input = st.text_area("Gemini API Keys (တစ်ကြောင်းလျှင် တစ်ခု):", height=120)
     api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
     
@@ -36,20 +35,18 @@ with st.sidebar:
         active_key = api_keys[idx]
         st.info(f"🔑 Key: {idx + 1}/{len(api_keys)} | 📊 Uses: {st.session_state.usage_counter}/10")
     
-    # Voice Source Selection
     voice_source = st.radio("အသံအရင်းအမြစ် (Voice Source)", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
     
     if voice_source == "Edge-TTS (Burmese Native)":
         voice_option = st.selectbox("အသံရွေးပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
         voice_name = voice_option.split(" ")[0]
     else:
-        # Google AI Studio Single Speaker Voices
+        # Gemini Voices (Must be lowercase for API)
         voice_name = st.selectbox("Gemini Voice ရွေးပါ", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
         st.warning("မှတ်ချက်: Gemini AI အသံများသည် မြန်မာလေယူလေသိမ်း အနည်းငယ် လွဲနိုင်ပါသည်။")
 
-    model_choice = st.selectbox("AI Model", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"])
+    model_choice = st.selectbox("AI Model (Recap အတွက်)", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"])
     
-    # Speed Control
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
     speed_param = f"{'+' if st.session_state.v_speed >= 1.0 else '-'}{int(abs(st.session_state.v_speed-1.0)*100)}%"
@@ -60,24 +57,29 @@ if active_key:
 # --- Functions ---
 
 async def generate_audio_edge(text, output_file, voice, speed):
-    """Microsoft Edge TTS ဖြင့် အသံထုတ်ခြင်း"""
     communicate = edge_tts.Communicate(text, voice, rate=speed)
     await communicate.save(output_file)
 
 def generate_audio_gemini(text, output_file, voice_name):
-    """Google AI Studio (Gemini 2.0) ဖြင့် အသံထုတ်ခြင်း"""
-    # Gemini 2.0 Flash သည်သာ Audio Generation ကို ကောင်းစွာထောက်ပံ့ပါသည်
+    """Google AI Studio (Gemini 2.0) ဖြင့် အသံထုတ်ခြင်း - Fixed Version"""
+    # Gemini Studio Audio အတွက် gemini-2.0-flash ကိုသာ သုံးရပါမည်
     model = genai.GenerativeModel("gemini-2.0-flash")
-    # Prompt ကို အသံထွက်ဖတ်ခိုင်းခြင်း
-    prompt = f"Please read this Burmese text naturally using the {voice_name} voice style: {text}"
     
-    # Speech generation config
+    # API သို့ ပို့မည့် format ကို ပြင်ဆင်ခြင်း
     response = model.generate_content(
-        prompt,
-        generation_config={"response_mime_type": "audio/mpeg"}
+        text,
+        generation_config={
+            "response_mime_type": "audio/mpeg",
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": voice_name.lower() # စာလုံးအသေးဖြင့် ပို့ရပါမည်
+                }
+            }
+        }
     )
     
-    # အသံဖိုင်ကို သိမ်းဆည်းခြင်း
+    # Audio data ကို ဖိုင်အဖြစ် သိမ်းခြင်း
+    # Gemini response ထဲမှ blob data ကို ရှာဖွေခြင်း
     for part in response.candidates[0].content.parts:
         if part.inline_data:
             with open(output_file, "wb") as f:
@@ -86,8 +88,11 @@ def generate_audio_gemini(text, output_file, voice_name):
     return False
 
 def get_mp3_duration(file_path):
-    audio = MP3(file_path)
-    return audio.info.length
+    try:
+        audio = MP3(file_path)
+        return audio.info.length
+    except:
+        return 0
 
 def clean_script(text):
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
@@ -142,10 +147,7 @@ with col2:
                         st.session_state.usage_counter = 0
                     st.rerun()
             except Exception as e:
-                if "429" in str(e):
-                    st.session_state.current_key_index += 1
-                    st.rerun()
-                else: st.error(str(e))
+                st.error(f"Script Generation Error: {str(e)}")
 
 # --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
@@ -158,14 +160,20 @@ if 'recap_script' in st.session_state:
     with col_btn1:
         if st.button("🔊 အသံဖိုင် (Audio) ထုတ်မည်"):
             with st.spinner(f"{voice_source} ဖြင့် အသံဖိုင်ဖန်တီးနေပါသည်..."):
-                audio_output = "recap_audio.mp3"
-                if voice_source == "Edge-TTS (Burmese Native)":
-                    asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
-                else:
-                    generate_audio_gemini(st.session_state['recap_script'], audio_output, voice_name)
-                
-                st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
-                st.session_state.audio_ready = True
+                try:
+                    audio_output = "recap_audio.mp3"
+                    if voice_source == "Edge-TTS (Burmese Native)":
+                        asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
+                    else:
+                        # Gemini Audio Generation
+                        success = generate_audio_gemini(st.session_state['recap_script'], audio_output, voice_name)
+                        if not success:
+                            st.error("Gemini Voice ထုတ်ရာတွင် အမှားရှိနေပါသည်။ Edge-TTS ကို ပြောင်းသုံးကြည့်ပါ။")
+                    
+                    st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
+                    st.session_state.audio_ready = True
+                except Exception as e:
+                    st.error(f"Audio Error: {str(e)}")
 
     if 'actual_audio_dur' in st.session_state:
         with col_btn2:
