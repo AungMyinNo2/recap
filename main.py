@@ -35,14 +35,15 @@ with st.sidebar:
         active_key = api_keys[idx]
         st.info(f"🔑 Key: {idx + 1}/{len(api_keys)} | 📊 Uses: {st.session_state.usage_counter}/10")
     
+    # အသံအရင်းအမြစ် ရွေးချယ်မှု
     voice_source = st.radio("အသံအရင်းအမြစ် (Voice Source)", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
     
     if voice_source == "Edge-TTS (Burmese Native)":
         voice_option = st.selectbox("အသံရွေးပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
         voice_name = voice_option.split(" ")[0]
     else:
-        voice_name = st.selectbox("Gemini Voice ရွေးပါ", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
-        st.warning("မှတ်ချက်: Gemini AI အသံများသည် မြန်မာလေယူလေသိမ်း အနည်းငယ် လွဲနိုင်ပါသည်။")
+        voice_name = st.selectbox("Gemini Voice (Experimental)", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
+        st.error("⚠️ Gemini Voices သည် မြန်မာစာကို လက်ရှိတွင် Error ပြတတ်ပါသည်။ မရပါက Edge-TTS ကို သုံးပါ။")
 
     model_choice = st.selectbox("AI Model (Recap အတွက်)", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"])
     
@@ -56,16 +57,14 @@ if active_key:
 # --- Functions ---
 
 async def generate_audio_edge(text, output_file, voice, speed):
+    """Edge-TTS ဖြင့် အသံထုတ်ခြင်း (တည်ငြိမ်သည်)"""
     communicate = edge_tts.Communicate(text, voice, rate=speed)
-    await asyncio.wait_for(communicate.save(output_file), timeout=60)
+    await communicate.save(output_file)
 
 def generate_audio_gemini(text, output_file, voice_name):
-    """Gemini 2.0 Flash ကို အသုံးပြု၍ အသံထုတ်ခြင်း (Fix Error 400)"""
-    # အသံထုတ်ယူရန်အတွက် gemini-2.0-flash ကိုသာ အသုံးပြုရပါမည်
-    # 2.5 သည် လက်ရှိတွင် audio output format အားလုံးကို မထောက်ပံ့သေးပါ
-    audio_model = genai.GenerativeModel("gemini-2.0-flash")
-    
-    response = audio_model.generate_content(
+    """Gemini 2.0 ဖြင့် အသံထုတ်ခြင်း (Experimental - မြန်မာစာအတွက် Error ပြနိုင်သည်)"""
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response = model.generate_content(
         text,
         generation_config={
             "response_mime_type": "audio/mpeg",
@@ -79,16 +78,13 @@ def generate_audio_gemini(text, output_file, voice_name):
         }
     )
     
-    found_audio = False
-    # Response ထဲတွင် candidate နှင့် content ပါမပါ စစ်ဆေးခြင်း
     if response.candidates and response.candidates[0].content.parts:
         for part in response.candidates[0].content.parts:
             if part.inline_data:
                 with open(output_file, "wb") as f:
                     f.write(part.inline_data.data)
-                found_audio = True
-                break
-    return found_audio
+                return True
+    return False
 
 def get_mp3_duration(file_path):
     try:
@@ -98,6 +94,7 @@ def get_mp3_duration(file_path):
         return 0
 
 def clean_script(text):
+    """စာသားထဲမှ အချိန်များနှင့် မလိုလားအပ်သော စာသားများ ရှင်းထုတ်ခြင်း"""
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -136,8 +133,7 @@ with col2:
                     
                     target_words = int((video_duration / 60) * 140)
                     prompt = f"""
-                    မင်းက အရမ်းနာမည်ကြီးတဲ့ မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
-                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
+                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် မြန်မာ Movie Recap Script ရေးပေးပါ။
                     ၁။ Timestamps တွေ လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
                     ၂။ စကားပြောပုံစံက energetic ဖြစ်ပါစေ။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ' စတာတွေသုံးပါ။
                     ၃။ ဗီဒီယိုအဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ်ပြီး အသဲလေးပေးသွားနော်' လို့ ထည့်ပြောပေးပါ။
@@ -176,19 +172,18 @@ if 'recap_script' in st.session_state:
                         st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
                         st.session_state.audio_ready = True
                     else:
-                        st.error("အသံဖိုင် ထုတ်ယူ၍ မရပါ။ စာသားရှည်လွန်းခြင်း သို့မဟုတ် Quota ပြည့်ခြင်းကြောင့် ဖြစ်နိုင်ပါသည်။ Edge-TTS ကို ပြောင်းသုံးကြည့်ပါ။")
+                        st.error("Audio Generation ပျက်ကွက်ပါသည်။ စာသားကို စစ်ဆေးပါ သို့မဟုတ် Edge-TTS ကို ပြောင်းသုံးပါ။")
                 except Exception as e:
-                    if "400" in str(e):
-                        st.error("Audio Error 400: Gemini Voice စနစ်သည် လက်ရှိတွင် ဤစာသား/ဒေသအတွက် အလုပ်မလုပ်သေးပါ။ ကျေးဇူးပြု၍ Edge-TTS ကို ပြောင်းသုံးပေးပါ။")
-                    else:
-                        st.error(f"Audio Error: {str(e)}")
+                    st.error(f"Audio Error: {str(e)}")
+                    st.info("အကြံပြုချက်: Gemini Voices သည် မြန်မာစာအတွက် Error ပြနိုင်ပါသည်။ ကျေးဇူးပြု၍ Sidebar မှ Edge-TTS ကို ရွေးချယ်အသုံးပြုပါ။")
 
     if 'actual_audio_dur' in st.session_state:
         with col_btn2:
             if st.button("⚡ Auto Sync Speed (ဗီဒီယိုနှင့် အချိန်ညှိမည်)"):
-                ratio = st.session_state.actual_audio_dur / video_duration
-                st.session_state.v_speed = max(0.3, min(2.0, round(st.session_state.v_speed * ratio, 2)))
-                st.rerun()
+                if video_duration > 0:
+                    ratio = st.session_state.actual_audio_dur / video_duration
+                    st.session_state.v_speed = max(0.3, min(2.0, round(st.session_state.v_speed * ratio, 2)))
+                    st.rerun()
 
     if 'actual_audio_dur' in st.session_state:
         st.audio("recap_audio.mp3")
