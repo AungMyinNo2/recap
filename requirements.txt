@@ -1,5 +1,7 @@
 streamlit
-google-generativeai==0.8.3
+google-generativeai>=0.8.3
 edge-tts
 moviepy==1.0.3
+pydub
+audioop-lpmud
 decorator
