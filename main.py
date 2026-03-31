@@ -10,6 +10,7 @@ from moviepy.editor import VideoFileClip
 from mutagen.mp3 import MP3
 
 # --- (၁) ဒီနေရာမှာ သင့် API Key တွေကို အသေထည့်ထားလိုက်ပါ ---
+# App ကို Refresh လုပ်လဲ ပျောက်မသွားတော့ပါဘူး
 MY_KEYS = [
     "AIzaSyB4tBtIKp1eQYWI7pQPaMG-m8rOHlQFDE0",
 "AIzaSyD4_HRejuycFNwxcSROEJRqnX2dF1sqvPo",
@@ -18,8 +19,7 @@ MY_KEYS = [
 "AIzaSyBdXIkIVLUMk91fnjW3fuWeFVv_2u6p1YU",
 "AIzaSyB8jfz0E8WJgzP0eW6Zkskj22zIgGJn4d0",
 "AIzaSyAWf02_jnI6Sl2Csn7ih3hOxNFsEwCHHrU",
-"AIzaSyD6zSTLLvqDP41iy5j5qZ8Czwm_ZLiZ7VY",
-
+"AIzaSyD6zSTLLvqDP41iy5j5qZ8Czwm_ZLiZ7VY", 
 ]
 
 # --- Setup Configuration ---
@@ -45,7 +45,7 @@ with st.sidebar:
     else:
         api_keys = MY_KEYS
 
-    keys_input = st.text_area("Gemini API Keys (ကုဒ်ထဲမှာ ထည့်ထားရင် ဒီမှာ ပြန်ထည့်စရာမလိုပါ):", 
+    keys_input = st.text_area("Gemini API Keys (တစ်ကြောင်းလျှင် တစ်ခု):", 
                               value="\n".join(api_keys), height=120)
     api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
     
@@ -64,9 +64,8 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice (Experimental)", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    # Gemini 2.0 Flash Thinking (Gemini 2.5) ကို ထည့်သွင်းထားသည်
-    model_choice = st.selectbox("AI Model (Recap အတွက်)", 
-                                ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash", "gemini-1.5-flash"])
+    # အရင်ကုဒ်ထဲကအတိုင်း Version များကို ပြန်ထားပေးထားပါသည်
+    model_choice = st.selectbox("AI Model (Recap အတွက်)", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"])
     
     voice_speed = st.slider("အသံနှုန်း (Speed Control)", 0.3, 2.0, value=st.session_state.v_speed, step=0.01)
     st.session_state.v_speed = voice_speed
@@ -128,7 +127,7 @@ with col1:
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
-        if not active_key: st.error("API Key မရှိသေးပါ။ ကုဒ်ထဲတွင် ထည့်ပါ။")
+        if not active_key: st.error("API Key မရှိသေးပါ။ ကုဒ်ထဲတွင် အသေထည့်ပါ သို့မဟုတ် Sidebar တွင် ရိုက်ထည့်ပါ။")
         else:
             try:
                 genai.configure(api_key=active_key)
@@ -142,8 +141,8 @@ with col2:
                     target_words = int((video_duration / 60) * 140)
                     prompt = f"""
                     ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် မြန်မာ Movie Recap Script ရေးပေးပါ။
-                    ၁။ Narrative Style ပဲ ရေးပါ။ Timestamps မပါစေရ။
-                    ၂။ အသံထွက်တဲ့အခါ သဘာဝကျဖို့ စာလုံးပေါင်းမှန်ပါစေ။
+                    ၁။ Timestamps တွေ လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
+                    ၂။ စကားပြောပုံစံက energetic ဖြစ်ပါစေ။
                     ၃။ ဗီဒီယိုကြာချိန် {int(video_duration)} စက္ကန့်အတွက် စာလုံးရေ {target_words} ခန့် ရေးပေးပါ။
                     """
                     response = model.generate_content([prompt, video_file])
@@ -156,7 +155,7 @@ with col2:
             except Exception as e:
                 st.error(f"Script Error: {str(e)}")
 
-# --- Result & Sync Section ---
+# --- Result Section ---
 if 'recap_script' in st.session_state:
     st.divider()
     edited_script = st.text_area("Generated Script:", st.session_state['recap_script'], height=200)
