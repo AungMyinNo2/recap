@@ -15,24 +15,26 @@ if "GEMINI_API_KEY" not in st.secrets:
     st.error("❌ Secrets ထဲမှာ 'GEMINI_API_KEY' ကို အရင်ထည့်ပေးပါ။")
     st.stop()
 else:
+    # API key ကို configure လုပ်ခြင်း
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 async def generate_audio(text, output_path, rate="+0%"):
     """ကြည်လင်တဲ့ မြန်မာအသံ ထုတ်ပေးခြင်း"""
     voice = "my-MM-NilarNeural"
     communicate = edge_tts.Communicate(text, voice, rate=rate)
-    await asyncio.wait_for(communicate.save(output_path), timeout=60)
+    await communicate.save(output_path)
 
 def get_recap_script(video_path, duration):
     """Gemini AI ကို Script ရေးခိုင်းခြင်း"""
-    # Model အမည်ကို version အသစ်ဆုံး သုံးထားပါသည်
+    # 404 Error မတက်အောင် Model နာမည်ကို အမှန်ဆုံး ခေါ်ထားပါတယ်
     model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     
     # ၁။ Video Upload
     video_file = genai.upload_file(path=video_path)
     st.info("AI က Video ကို လေ့လာနေပါတယ်။ ခဏစောင့်ပေးပါ...")
 
-    # ၂။ Video Processing ပြီးအောင် စောင့်ခြင်း (Processing state မပြီးခင် ခေါ်မိပါက 404 တက်တတ်ပါသည်)
+    # ၂။ Video Processing ပြီးအောင် စောင့်ခြင်း
+    # Processing မပြီးခင် Content ကို generate လုပ်ပါက 404 Error တက်တတ်ပါသည်
     while video_file.state.name == "PROCESSING":
         time.sleep(2)
         video_file = genai.get_file(video_file.name)
@@ -49,9 +51,10 @@ def get_recap_script(video_path, duration):
     ၃။ စာသားသက်သက်သာ ပြန်ပေးပါ။
     """
     
+    # ၄။ Content ထုတ်လုပ်ခြင်း
     response = model.generate_content([prompt, video_file])
     
-    # Server ပေါ်က file ကို ချက်ချင်းဖျက်ပါ
+    # ပြီးရင် server ပေါ်က file ကို ဖျက်ပါ
     genai.delete_file(video_file.name)
     
     return response.text
@@ -81,7 +84,7 @@ if v_file:
                 st.subheader("📝 Generated Script:")
                 st.write(script_text)
 
-                # ၂။ အသံထုတ်ခြင်း
+                # ၂။ MP3 ထုတ်ခြင်း
                 mp3_out = "recap.mp3"
                 asyncio.run(generate_audio(script_text, mp3_out))
 
@@ -117,7 +120,11 @@ if v_file:
                         st.download_button("Download WAV", f, "recap.wav")
 
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                # 404 error ဖြစ်ပါက ရှင်းလင်းသော message ပြရန်
+                if "404" in str(e):
+                    st.error("AI Model ကို ရှာမတွေ့ပါ။ ကျေးဇူးပြု၍ requirements.txt မှာ version ပြင်ပြီး Reboot လုပ်ပေးပါ။")
+                else:
+                    st.error(f"Error: {str(e)}")
             finally:
                 v_clip.close()
                 if os.path.exists(video_path):
