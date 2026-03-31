@@ -49,7 +49,7 @@ with st.sidebar:
     st.session_state.v_speed = voice_speed
     speed_param = f"{'+' if st.session_state.v_speed >= 1.0 else '-'}{int(abs(st.session_state.v_speed-1.0)*100)}%"
 
-# --- Functions (အပြောင်းအလဲမရှိပါ) ---
+# --- Functions ---
 async def generate_audio_edge(text, output_file, voice, speed):
     communicate = edge_tts.Communicate(text, voice, rate=speed)
     await communicate.save(output_file)
@@ -59,6 +59,7 @@ def get_mp3_duration(file_path):
     except: return 0
 
 def clean_script(text):
+    # Timestamps များနှင့် မလိုလားအပ်သော စာသားများ ရှင်းထုတ်ခြင်း
     text = re.sub(r'(\[?\d{1,2}:\d{2}(:\d{2})?\]?)|(-->)|(\d{1,2}\s?မိနစ်)|(\d{1,2}\s?စက္ကန့်)', '', text)
     return re.sub(r'\s+', ' ', text).strip()
 
@@ -91,25 +92,29 @@ with col2:
                 with st.spinner("AI Script ရေးသားနေပါသည်..."):
                     model = genai.GenerativeModel(model_choice)
                     video_file = genai.upload_file(path=st.session_state.video_path)
-                    while video_file.state.name == "PROCESSING": time.sleep(2); video_file = genai.get_file(video_file.name)
+                    while video_file.state.name == "PROCESSING": 
+                        time.sleep(2)
+                        video_file = genai.get_file(video_file.name)
                     
                     target_words = int((video_duration / 60) * 140)
-                    prompt = f"ဒီဗီဒီယိုကို ကြည့်ပြီး မြန်မာ Movie Recap Script ရေးပေးပါ။ စာလုံးရေ {target_words} ခန့်။"
-		
+                    
+                    # --- ပြင်ဆင်လိုက်သော Prompt အပိုင်း ---
+                    prompt = f"""
                     ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
                     
                     လိုအပ်ချက်များ (Strict Requirements):
                     ၁။ 00:00 (Timestamps) တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ(လုံးဝ) မထည့်ပါနဲ့။ စာသားသက်သက် Narrative Style ပဲ ရေးပါ။
                     ၂။ စကားပြောပုံစံက အရမ်း energetic ဖြစ်ပါစေ။ 'ကဲ... ဒီနေ့မှာတော့', 'တကယ့်ကို ရင်ခုန်ဖို့ကောင်းတာဗျာ', 'ဇာတ်လမ်းလေးကတော့' စတဲ့ ဆွဲဆောင်မှုရှိတဲ့ စကားလုံးတွေ သုံးပါ။
                     ၃။ စာသားကို စာပိုဒ်တဆက်တည်း လူတစ်ယောက် Recap ပြောပြနေသလို ရေးပေးပါ။
-		       အဆုံးမှာ 'အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' ဆိုတဲ့  ပုံစံမျိုး ရေးပေးပါ။
-
-                    ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+                    ၄။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' ဆိုတဲ့ ပုံစံမျိုး ထည့်ပေးပါ။
+                    ၅။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
                     """
                     
                     response = model.generate_content([prompt, video_file])
                     st.session_state['recap_script'] = clean_script(response.text)
                     st.session_state.usage_counter += 1
+                    
+                    # Key Switching Logic
                     if st.session_state.usage_counter >= 10:
                         st.session_state.current_key_index += 1
                         st.session_state.usage_counter = 0
@@ -129,3 +134,6 @@ if 'recap_script' in st.session_state:
             asyncio.run(generate_audio_edge(st.session_state['recap_script'], audio_output, voice_name, speed_param))
             st.session_state.actual_audio_dur = get_mp3_duration(audio_output)
             st.audio(audio_output)
+            
+            with open(audio_output, "rb") as f:
+                st.download_button("Download MP3", f, file_name="recap.mp3")
