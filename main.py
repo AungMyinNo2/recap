@@ -28,7 +28,6 @@ st.title("🎬 Burmese Movie Recap AI (Ultra Sync)")
 
 # --- Session State Initializing ---
 if 'v_speed' not in st.session_state: st.session_state.v_speed = 1.0
-if 'usage_counter' not in st.session_state: st.session_state.usage_counter = 0
 if 'current_key_index' not in st.session_state: st.session_state.current_key_index = 0
 if 'last_sync_speed' not in st.session_state: st.session_state.last_sync_speed = 1.0
 
@@ -36,7 +35,6 @@ if 'last_sync_speed' not in st.session_state: st.session_state.last_sync_speed =
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # ဖိုင်ထဲမှ အရင်သိမ်းထားသော Key များကို အလိုအလျောက် ပြန်ဖတ်မည်
     saved_keys = load_keys()
     keys_input = st.text_area("Gemini API Keys (တစ်ကြောင်းလျှင် တစ်ခု):", value=saved_keys, height=120)
     
@@ -48,12 +46,13 @@ with st.sidebar:
 
     api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
     
-    active_key = None
     if api_keys:
         idx = st.session_state.current_key_index % len(api_keys)
         active_key = api_keys[idx]
         st.info(f"🔑 Key {idx + 1} ကို သုံးနေပါသည် | {len(api_keys)} ခု ရှိပါသည်")
-        genai.configure(api_key=active_key)
+    else:
+        active_key = None
+        st.warning("API Key ထည့်ပေးပါ။")
     
     voice_source = st.radio("အသံအရင်းအမြစ်", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
     if voice_source == "Edge-TTS (Burmese Native)":
@@ -62,7 +61,6 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    # အစောဆုံးကုဒ်ထဲမှ Gemini Version များ
     model_mapping = {
         "gemini-2.0-flash": "gemini-2.0-flash",
         "gemini-2.5-flash (Thinking)": "gemini-2.0-flash-thinking-exp-01-21",
@@ -112,30 +110,46 @@ with col1:
 with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
-        if not active_key:
+        if not api_keys:
             st.error("API Key ထည့်ပါ။")
         else:
-            try:
-                with st.spinner(f"{model_ui_choice} ဖြင့် Script ရေးသားနေပါသည်..."):
-                    model = genai.GenerativeModel(model_choice)
-                    video_file = genai.upload_file(path=st.session_state.video_path)
-                    while video_file.state.name == "PROCESSING": 
-                        time.sleep(2)
-                        video_file = genai.get_file(video_file.name)
-                    
-                    target_words = int((video_duration / 60) * 140)
-                    prompt = f"""
-                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
-                    ၁။ Timestamps မပါစေရ။ Narrative Style ပဲ ရေးပါ။
-                    ၂။ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
-                    ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-                    ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
-                    """
-                    response = model.generate_content([prompt, video_file])
-                    st.session_state['recap_script'] = clean_script(response.text)
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Script Error: {str(e)}")
+            success = False
+            # Key များကို တစ်ခုချင်းစီ အလိုအလျောက် ပြောင်းသုံးမည့် Loop
+            for attempt in range(len(api_keys)):
+                current_idx = (st.session_state.current_key_index + attempt) % len(api_keys)
+                temp_key = api_keys[current_idx]
+                
+                try:
+                    genai.configure(api_key=temp_key)
+                    with st.spinner(f"Key {current_idx + 1} ဖြင့် ကြိုးစားနေပါသည်..."):
+                        model = genai.GenerativeModel(model_choice)
+                        video_file = genai.upload_file(path=st.session_state.video_path)
+                        while video_file.state.name == "PROCESSING": 
+                            time.sleep(2)
+                            video_file = genai.get_file(video_file.name)
+                        
+                        target_words = int((video_duration / 60) * 140)
+                        prompt = f"ဒီဗီဒီယိုကို ကြည့်ပြီး Recap Script ရေးပေးပါ။ စာလုံးရေ {target_words} ခန့်။ Timestamps မထည့်ပါနဲ့။"
+                        
+                        response = model.generate_content([prompt, video_file])
+                        st.session_state['recap_script'] = clean_script(response.text)
+                        
+                        # အောင်မြင်ရင် လက်ရှိ Key index ကို မှတ်ထားမယ်
+                        st.session_state.current_key_index = current_idx
+                        success = True
+                        break 
+                except Exception as e:
+                    if "429" in str(e):
+                        st.warning(f"Key {current_idx + 1} မှာ Quota ပြည့်သွားပါပြီ။ နောက်တစ်ခုကို ပြောင်းလဲနေပါသည်။")
+                        continue # နောက် Key တစ်ခုနဲ့ ထပ်ကြိုးစားမယ်
+                    else:
+                        st.error(f"Error: {str(e)}")
+                        break
+            
+            if success:
+                st.rerun()
+            elif not success:
+                st.error("Key အားလုံး Quota ပြည့်နေပါသည်။ ၁ မိနစ်ခန့်စောင့်ပါ သို့မဟုတ် Gmail မတူသော Key အသစ်များ ထပ်ထည့်ပါ။")
 
 # --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
@@ -170,9 +184,9 @@ if 'recap_script' in st.session_state:
     if 'actual_audio_dur' in st.session_state:
         st.audio("recap_audio.mp3")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Video", f"{int(video_duration)}s")
-        m2.metric("MP3", f"{int(st.session_state.actual_audio_dur)}s")
+        m1.metric("Video Duration", f"{int(video_duration)}s")
+        m2.metric("MP3 Duration", f"{int(st.session_state.actual_audio_dur)}s")
         diff = st.session_state.actual_audio_dur - video_duration
-        m3.metric("Diff", f"{int(diff)}s", delta=f"{int(diff)}s", delta_color="inverse")
+        m3.metric("Difference", f"{int(diff)}s", delta=f"{int(diff)}s", delta_color="inverse")
         with open("recap_audio.mp3", "rb") as f:
             st.download_button("Download MP3", f, file_name="recap.mp3")
