@@ -9,33 +9,52 @@ import re
 from moviepy.editor import VideoFileClip
 from mutagen.mp3 import MP3
 
+# --- API Key များကို Text File ဖြင့် သိမ်းဆည်း/ပြန်ဖတ်ရန် ---
+KEYS_FILE = "api_keys.txt"
+
+def save_keys(keys_text):
+    with open(KEYS_FILE, "w") as f:
+        f.write(keys_text)
+
+def load_keys():
+    if os.path.exists(KEYS_FILE):
+        with open(KEYS_FILE, "r") as f:
+            return f.read()
+    return ""
+
 # --- Setup Configuration ---
 st.set_page_config(page_title="Burmese Movie Recap Pro AI", layout="wide")
 st.title("🎬 Burmese Movie Recap AI (Ultra Sync)")
 
 # --- Session State Initializing ---
+if 'v_speed' not in st.session_state: st.session_state.v_speed = 1.0
 if 'usage_counter' not in st.session_state: st.session_state.usage_counter = 0
 if 'current_key_index' not in st.session_state: st.session_state.current_key_index = 0
-if 'v_speed' not in st.session_state: st.session_state.v_speed = 1.0
 if 'last_sync_speed' not in st.session_state: st.session_state.last_sync_speed = 1.0
 
 # --- Sidebar Settings ---
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    try:
-        keys_from_secrets = st.secrets["GEMINI_KEYS"]
-        api_keys = [k.strip() for k in keys_from_secrets.split("\n") if k.strip()]
-        
+    # ဖိုင်ထဲမှ အရင်သိမ်းထားသော Key များကို အလိုအလျောက် ပြန်ဖတ်မည်
+    saved_keys = load_keys()
+    keys_input = st.text_area("Gemini API Keys (တစ်ကြောင်းလျှင် တစ်ခု):", value=saved_keys, height=120)
+    
+    if st.button("💾 API Keys သိမ်းဆည်းရန်"):
+        save_keys(keys_input)
+        st.success("API Keys များကို မှတ်သားလိုက်ပါပြီ။")
+        time.sleep(1)
+        st.rerun()
+
+    api_keys = [k.strip() for k in keys_input.split("\n") if k.strip()]
+    
+    active_key = None
+    if api_keys:
         idx = st.session_state.current_key_index % len(api_keys)
         active_key = api_keys[idx]
-        st.success(f"🔑 Key {idx + 1} ကို သုံးနေပါသည်")
+        st.info(f"🔑 Key {idx + 1} ကို သုံးနေပါသည် | {len(api_keys)} ခု ရှိပါသည်")
         genai.configure(api_key=active_key)
-    except:
-        st.error("Secrets ထဲမှာ GEMINI_KEYS မတွေ့ပါ။ Dashboard > Settings > Secrets မှာ အရင်ထည့်ပေးပါ။")
-        api_keys = []
-        active_key = None
-
+    
     voice_source = st.radio("အသံအရင်းအမြစ်", ["Edge-TTS (Burmese Native)", "Gemini Studio (AI Voices)"])
     if voice_source == "Edge-TTS (Burmese Native)":
         voice_option = st.selectbox("အသံရွေးပါ", ["my-MM-ThihaNeural (Male)", "my-MM-NilarNeural (Female)"])
@@ -43,12 +62,11 @@ with st.sidebar:
     else:
         voice_name = st.selectbox("Gemini Voice", ["Aoede", "Charon", "Fenrir", "Kore", "Puck"])
 
-    # Model List
+    # အစောဆုံးကုဒ်ထဲမှ Gemini Version များ
     model_mapping = {
-        "Gemini 2.0 Flash (Fastest)": "gemini-2.0-flash",
-        "Gemini 2.5 Flash (Thinking)": "gemini-2.0-flash-thinking-exp-01-21",
-        "Gemini 1.5 Flash (Reliable)": "gemini-1.5-flash",
-        "Gemini 1.5 Pro (Powerful)": "gemini-1.5-pro"
+        "gemini-2.0-flash": "gemini-2.0-flash",
+        "gemini-2.5-flash (Thinking)": "gemini-2.0-flash-thinking-exp-01-21",
+        "gemini-1.5-flash": "gemini-1.5-flash"
     }
     model_ui_choice = st.selectbox("AI Model (Recap အတွက်)", list(model_mapping.keys()))
     model_choice = model_mapping[model_ui_choice]
@@ -95,43 +113,29 @@ with col2:
     st.write("### 📝 Step 2: Recap ပြုလုပ်ခြင်း")
     if st.button("Recap Script စတင်ပြုလုပ်မည်", type="primary"):
         if not active_key:
-            st.error("API Key မရှိပါ။")
+            st.error("API Key ထည့်ပါ။")
         else:
-            success = False
-            # အကယ်၍ ရွေးထားသော Model Error တက်လျှင် အလိုအလျောက် ပြောင်းသုံးမည့် စာရင်း
-            models_to_try = [model_choice, "gemini-2.0-flash", "gemini-1.5-flash"]
-            
-            for m in models_to_try:
-                if success: break
-                try:
-                    with st.spinner(f"{m} ဖြင့် စမ်းသပ်နေပါသည်..."):
-                        model = genai.GenerativeModel(m)
-                        video_file = genai.upload_file(path=st.session_state.video_path)
-                        while video_file.state.name == "PROCESSING": 
-                            time.sleep(2)
-                            video_file = genai.get_file(video_file.name)
-                        
-                        target_words = int((video_duration / 60) * 140)
-                        prompt = f"ဒီဗီဒီယိုကို ကြည့်ပြီး Recap Script ရေးပေးပါ။ စာလုံးရေ {target_words} ခန့်။ Timestamps မပါစေရ။ energetic ဖြစ်ပါစေ။"
-                        
-                        response = model.generate_content([prompt, video_file])
-                        st.session_state['recap_script'] = clean_script(response.text)
-                        success = True
-                        st.rerun()
-                except Exception as e:
-                    err = str(e)
-                    if "404" in err or "not found" in err.lower():
-                        st.warning(f"⚠️ {m} ကို သင့် Key က သုံးခွင့်မရှိပါ။ နောက် Model တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
-                        continue
-                    elif "429" in err:
-                        st.error("❌ Quota ပြည့်သွားပါပြီ။ ၁ မိနစ်လောက်စောင့်ပါ။")
-                        break
-                    else:
-                        st.error(f"❌ Error: {err}")
-                        break
-            
-            if not success:
-                st.error("Model အားလုံး အဆင်မပြေဖြစ်နေပါသည်။ ခေတ္တစောင့်ပါ သို့မဟုတ် Key အသစ်ထည့်ပါ။")
+            try:
+                with st.spinner(f"{model_ui_choice} ဖြင့် Script ရေးသားနေပါသည်..."):
+                    model = genai.GenerativeModel(model_choice)
+                    video_file = genai.upload_file(path=st.session_state.video_path)
+                    while video_file.state.name == "PROCESSING": 
+                        time.sleep(2)
+                        video_file = genai.get_file(video_file.name)
+                    
+                    target_words = int((video_duration / 60) * 140)
+                    prompt = f"""
+                    ဒီဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်တွေ ရင်ခုန်စိတ်လှုပ်ရှားသွားအောင် Recap Script ရေးပေးပါ။
+                    ၁။ Timestamps မပါစေရ။ Narrative Style ပဲ ရေးပါ။
+                    ၂။ energetic ဖြစ်တဲ့ စကားလုံးတွေ သုံးပါ။
+                    ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
+                    ၄။ ဗီဒီယိုကြာချိန်က {int(video_duration)} စက္ကန့် ဖြစ်လို့ စာလုံးရေ {target_words} ခန့်ပဲ ရေးပေးပါ။
+                    """
+                    response = model.generate_content([prompt, video_file])
+                    st.session_state['recap_script'] = clean_script(response.text)
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Script Error: {str(e)}")
 
 # --- Result & Sync Section ---
 if 'recap_script' in st.session_state:
@@ -166,9 +170,9 @@ if 'recap_script' in st.session_state:
     if 'actual_audio_dur' in st.session_state:
         st.audio("recap_audio.mp3")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Video Duration", f"{int(video_duration)} s")
-        m2.metric("MP3 Duration", f"{int(st.session_state.actual_audio_dur)} s")
+        m1.metric("Video", f"{int(video_duration)}s")
+        m2.metric("MP3", f"{int(st.session_state.actual_audio_dur)}s")
         diff = st.session_state.actual_audio_dur - video_duration
-        m3.metric("Difference", f"{int(diff)} s", delta=f"{int(diff)} s", delta_color="inverse")
+        m3.metric("Diff", f"{int(diff)}s", delta=f"{int(diff)}s", delta_color="inverse")
         with open("recap_audio.mp3", "rb") as f:
             st.download_button("Download MP3", f, file_name="recap.mp3")
