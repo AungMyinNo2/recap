@@ -15,7 +15,6 @@ if "GEMINI_API_KEY" not in st.secrets:
     st.error("❌ Secrets ထဲမှာ 'GEMINI_API_KEY' ကို အရင်ထည့်ပေးပါ။")
     st.stop()
 else:
-    # API key ကို configure လုပ်ခြင်း
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 async def generate_audio(text, output_path, rate="+0%"):
@@ -26,15 +25,14 @@ async def generate_audio(text, output_path, rate="+0%"):
 
 def get_recap_script(video_path, duration):
     """Gemini AI ကို Script ရေးခိုင်းခြင်း"""
-    # 404 Error မတက်အောင် Model နာမည်ကို အမှန်ဆုံး ခေါ်ထားပါတယ်
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    # Model နာမည်ကို 'models/' ရှေ့ကခံပြီး အပြည့်အစုံ ခေါ်ထားပါတယ်
+    model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
     
     # ၁။ Video Upload
     video_file = genai.upload_file(path=video_path)
     st.info("AI က Video ကို လေ့လာနေပါတယ်။ ခဏစောင့်ပေးပါ...")
 
     # ၂။ Video Processing ပြီးအောင် စောင့်ခြင်း
-    # Processing မပြီးခင် Content ကို generate လုပ်ပါက 404 Error တက်တတ်ပါသည်
     while video_file.state.name == "PROCESSING":
         time.sleep(2)
         video_file = genai.get_file(video_file.name)
@@ -70,7 +68,6 @@ if v_file:
         tmp.write(v_file.read())
         video_path = tmp.name
 
-    # Video ကြာချိန်တိုင်းခြင်း
     v_clip = VideoFileClip(video_path)
     v_dur = int(v_clip.duration)
     st.video(v_file)
@@ -88,7 +85,7 @@ if v_file:
                 mp3_out = "recap.mp3"
                 asyncio.run(generate_audio(script_text, mp3_out))
 
-                # ၃။ ကြာချိန် ချိန်ညှိခြင်း (Sync Logic)
+                # ၃။ Sync Logic (Duration Matching)
                 audio_clip = AudioFileClip(mp3_out)
                 actual_dur = audio_clip.duration
                 
@@ -108,23 +105,12 @@ if v_file:
 
                 # ၅။ ရလဒ်ပြသခြင်း
                 st.success(f"✅ အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("MP3 Format")
-                    st.audio(mp3_out)
-                with col2:
-                    st.write("WAV Format")
-                    st.audio(wav_out)
-                    with open(wav_out, "rb") as f:
-                        st.download_button("Download WAV", f, "recap.wav")
+                st.audio(mp3_out)
+                with open(wav_out, "rb") as f:
+                    st.download_button("Download WAV", f, "recap_audio.wav")
 
             except Exception as e:
-                # 404 error ဖြစ်ပါက ရှင်းလင်းသော message ပြရန်
-                if "404" in str(e):
-                    st.error("AI Model ကို ရှာမတွေ့ပါ။ ကျေးဇူးပြု၍ requirements.txt မှာ version ပြင်ပြီး Reboot လုပ်ပေးပါ။")
-                else:
-                    st.error(f"Error: {str(e)}")
+                st.error(f"Error တက်သွားပါတယ်: {str(e)}")
             finally:
                 v_clip.close()
                 if os.path.exists(video_path):
