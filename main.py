@@ -8,21 +8,21 @@ import time
 from moviepy.editor import VideoFileClip
 
 # --- Setup Configuration ---
-st.set_page_config(page_title="Burmese Movie Recap AI (Ultimate)", layout="wide")
+st.set_page_config(page_title="Burmese Movie Recap Ultra AI", layout="wide")
 
-st.title("🎬 Burmese Movie Recap AI (Gemini 2.0 Generation)")
+st.title("🎬 Burmese Movie Recap AI (Ultra High Version)")
 
 # Sidebar Settings
 with st.sidebar:
     st.header("⚙️ Model Settings")
     api_key = st.text_input("Gemini API Key:", type="password")
     
-    # ဖုန်းမှာ မြင်ရတဲ့အတိုင်း Model များကို ခွဲခြားပေးထားပါတယ်
+    # သင့် API Key တွင် အလုပ်လုပ်သော Model အမြင့်ဆုံးများကို ထည့်ပေးထားပါသည်
     model_map = {
-        "🚀 Fast (Gemini 2.0 Flash)": "gemini-2.0-flash",
-        "🧠 Thinking (Gemini 2.0 Flash-Thinking)": "gemini-2.0-flash-thinking-exp-01-21",
-        "💎 Pro (Gemini 2.0 Pro Experimental)": "gemini-2.0-pro-exp-02-05",
-        "⚖️ Standard (Gemini 1.5 Pro)": "gemini-1.5-pro"
+        "💎 Gemini 2.5 Flash (Recommended)": "gemini-2.5-flash",
+        "🔥 Gemini 2.5 Pro (Ultra High)": "gemini-2.5-pro",
+        "⚡ Gemini 2.0 Flash": "gemini-2.0-flash",
+        "🧠 Gemini 2.0 Pro Exp": "gemini-2.0-pro-exp-02-05"
     }
     
     selected_display_name = st.selectbox("အသုံးပြုမည့် Model ကိုရွေးပါ", list(model_map.keys()))
@@ -44,29 +44,32 @@ async def generate_audio(text, output_file, voice, speed):
     await communicate.save(output_file)
 
 def process_video_with_gemini(video_path, selected_model, duration_sec):
+    # Video Upload to Gemini
     video_file = genai.upload_file(path=video_path)
     
     status_text = st.empty()
-    status_text.info(f"⏳ {selected_model} စနစ်ဖြင့် ဗီဒီယိုကို လေ့လာနေပါသည်...")
+    status_text.info(f"⏳ {selected_model} ဖြင့် ဗီဒီယိုကို အသေးစိတ် လေ့လာနေပါသည်...")
     
     while video_file.state.name == "PROCESSING":
         time.sleep(3)
         video_file = genai.get_file(video_file.name)
     
-    # ဗီဒီယို ကြာချိန်အရ စာလုံးရေ တွက်ချက်ခြင်း
-    target_words = int((duration_sec / 60) * 130)
+    # စာလုံးရေ တွက်ချက်ခြင်း (၁ မိနစ်လျှင် ၁၃၀ စာလုံးခန့်)
+    # မြန်မာစကားပြောနှုန်းကို အချိန်ကြာချိန်နှင့် ကိုက်ညီအောင် ညှိယူခြင်း
+    target_words = int((duration_sec / 60) * 135)
 
     model = genai.GenerativeModel(model_name=selected_model)
     
-    # Thinking Model အတွက် ပိုမိုနက်နဲသော Prompt ကို သုံးပါမည်
+    # Script လွဲချော်မှုမရှိစေရန် အသေးစိတ် Prompt ပေးခြင်း
     prompt = f"""
     မင်းက ကမ္ဘာကျော် မြန်မာ Movie Recap YouTuber တစ်ယောက်ပါ။ 
-    ဒီဗီဒီယိုကို အသေးစိတ် ကြည့်ရှု လေ့လာပြီး ဇာတ်လမ်းကို စိတ်ဝင်စားစရာ အကောင်းဆုံး Recap Script တစ်ခု ရေးပေးပါ။
+    ဒီဗီဒီယိုကို အစအဆုံး အသေးစိတ် ကြည့်ရှုပြီး ဇာတ်လမ်းကို စိတ်ဝင်စားစရာ အကောင်းဆုံး Recap Script တစ်ခု ရေးပေးပါ။
     
-    လမ်းညွှန်ချက်များ:
-    ၁။ ဗီဒီယိုကြာချိန်က {int(duration_sec)} စက္ကန့် ဖြစ်သောကြောင့် အသံဖတ်ချိန် စက္ကန့် {int(duration_sec)} ဝန်းကျင်တွင် ပြီးဆုံးရန် စာလုံးရေ {target_words} ခန့်သာ ရေးသားပါ။
-    ၂။ Thinking Mode ၏ စွမ်းဆောင်ရည်ကို အသုံးပြု၍ ဇာတ်လမ်း၏ အနှစ်သာရနှင့် စိတ်လှုပ်ရှားစရာ အခန်းများကို ထင်ရှားအောင် ရေးပေးပါ။
-    ၃။ စကားပြောပုံမှာ မြန်မာပရိသတ် ကြိုက်နှစ်သက်မည့် YouTuber Recap ပုံစံမျိုး ဖြစ်ရပါမည်။
+    အရေးကြီးချက်များ:
+    ၁။ ဗီဒီယိုကြာချိန်က {int(duration_sec)} စက္ကန့် ဖြစ်သောကြောင့် အသံဖတ်ချိန် {int(duration_sec)} စက္ကန့်နှင့် ကွက်တိဖြစ်စေရန် စာလုံးရေ {target_words} ခန့်သာ ရေးသားပါ။
+    ၂။ ဗီဒီယိုထဲက အဖြစ်အပျက်တွေ၊ ဇာတ်ကောင်တွေရဲ့ လုပ်ဆောင်ချက်တွေကို အမှားအယွင်းမရှိဘဲ အသေးစိတ် ရှင်းပြပေးပါ။
+    ၃။ အစမှာ 'ဒီနေ့မှာတော့...' လို့ စပြီး အဆုံးမှာ 'နောက်ထပ် ဗီဒီယိုတွေမှာ ပြန်တွေ့ကြမယ်' ဆိုတဲ့ YouTuber ပုံစံမျိုး ရေးပေးပါ။
+    ၄။ မြန်မာစာအရေးအသားကို ကြည်လင်ပြီး ဖတ်ရလွယ်ကူအောင် ရေးပေးပါ။
     """
     
     response = model.generate_content([prompt, video_file])
@@ -95,33 +98,37 @@ with col1:
 
 with col2:
     st.write("### 📝 Step 2: Recap Script ထုတ်ယူခြင်း")
-    if st.button("Recap Script စတင်ပြုလုပ်မည် (Ultra Pro)", type="primary"):
+    if st.button("Recap Script စတင်ပြုလုပ်မည် (High Quality)", type="primary"):
         if not api_key:
-            st.error("API Key ကို Sidebar တွင် ထည့်သွင်းပေးပါ။")
+            st.error("API Key ကို Sidebar တွင် အရင်ထည့်ပါ။")
         elif not uploaded_file:
-            st.warning("ဗီဒီယို အရင်တင်ပေးပါ။")
+            st.warning("ဗီဒီယို တင်ပေးပါ။")
         else:
             try:
-                with st.spinner(f"{selected_display_name} ဖြင့် လုပ်ဆောင်နေပါသည်..."):
+                with st.spinner(f"{selected_display_name} ကို အသုံးပြုနေပါသည်..."):
                     final_script = process_video_with_gemini(video_path, model_choice, video_duration)
                     st.session_state['recap_script'] = final_script
-                    st.success("Script ရေးသားမှု ပြီးမြောက်ပါပြီ!")
+                    st.success("Script ရေးသားပြီးပါပြီ!")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
 
 # --- Result Section ---
 if 'recap_script' in st.session_state:
     st.divider()
-    st.write("### 📜 Generated Recap Script")
-    edited_script = st.text_area("Script ကို လိုအပ်သလို ပြင်ဆင်ပါ:", st.session_state['recap_script'], height=300)
+    st.write("### 📜 Generated Recap Script (Pro Version)")
+    # AI ထုတ်ပေးတဲ့ script ကို ဒီမှာ ပြင်နိုင်ပါတယ်
+    edited_script = st.text_area("Script ကို အချိန်ကြာချိန်နှင့် ကိုက်ညီအောင် ပြင်ဆင်ပါ:", st.session_state['recap_script'], height=300)
     
-    if st.button("🔊 အသံဖိုင် (Audio) ဖန်တီးမည်"):
+    if st.button("🔊 မြန်မာအသံဖိုင် (Audio) ဖန်တီးမည်"):
         with st.spinner("ကြည်လင်သော မြန်မာအသံဖိုင် ဖန်တီးနေပါသည်..."):
             audio_output = "recap_audio.mp3"
             asyncio.run(generate_audio(edited_script, audio_output, voice_name, speed_param))
+            
             st.audio(audio_output)
+            st.info(f"ဗီဒီယိုကြာချိန်: {int(video_duration)}s | အသံဖတ်နှုန်း: {voice_speed}x")
+            
             with open(audio_output, "rb") as f:
-                st.download_button("Download Audio (MP3)", f, file_name="movie_recap_pro.mp3")
+                st.download_button("Download Audio (MP3)", f, file_name="high_quality_recap.mp3")
 
 st.markdown("---")
-st.caption("Advanced AI Recap Engine | Support for Thinking & Pro Models")
+st.caption("Powered by Gemini 2.5 & 2.0 Pro Experimental | Ultra High Fidelity Burmese TTS")
