@@ -58,7 +58,7 @@ if total_keys > 1:
 
 st.sidebar.divider()
 
-voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["နီလာ (အမျိုးသမီးသံ)", "သီဟ (အမျိုးသားသံ)"])
+voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["နီနီ", "သီသီ"])
 voice_id = "my-MM-NilarNeural" if "နီလာ" in voice_choice else "my-MM-ThihaNeural"
 
 # အသံအတိုးအကျယ် (%)
@@ -93,7 +93,7 @@ def get_recap_script(video_path):
             ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
             ၂။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
             ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-            ၄။ မြန်မာစာလုံးရေ ၅၀၀ ထက် မပိုစေဘဲ ဇာတ်လမ်းကို ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
+            ၄။ မြန်မာစာလုံးရေ လိုအပ်သလောက်စာလုံးရေ များများရေးနဲ့ ဇာတ်လမ်းကို ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
             ၅။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
             """
             
@@ -115,7 +115,7 @@ def get_recap_script(video_path):
     return None
 
 # --- Main UI ---
-st.title("🎙️ AI Movie Recap (Gemini 2.5 Flash)")
+st.title("🎙️ ကျော်ြကီးပေးတဲ့သောက (Gemini 2.5 Flash)")
 
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
