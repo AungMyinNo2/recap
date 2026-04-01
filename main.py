@@ -30,11 +30,11 @@ def get_model_with_rotation():
         
         try:
             genai.configure(api_key=current_key)
-            # Gemini Model Name (1.5 Flash သည် လက်ရှိ Stable Version ဖြစ်သည်)
-            # တစ်ခါတစ်ရံ model အမည်မှားနေတတ်၍ သေချာစစ်ဆေးပါ
-            model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+            # အသုံးပြုသူတောင်းဆိုထားသည့် Gemini 2.5 Flash version ကို အသုံးပြုထားပါသည်
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
             return model, current_key
         except Exception:
+            # Error ဖြစ်လျှင် နောက် Key တစ်ခုသို့ ပြောင်းရန်
             st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(keys)
             continue
             
@@ -47,14 +47,14 @@ if 'recap_script' not in st.session_state:
 # --- Sidebar Settings ---
 st.sidebar.title("⚙️ Audio Settings")
 
-# API Keys အရေအတွက်ကို ပြသရန် အပိုင်း
+# API Keys အရေအတွက်နှင့် လက်ရှိသုံးနေသော Key ကို ပြသရန်
 keys_list = st.secrets.get("GEMINI_KEYS", [])
 total_keys = len(keys_list)
 current_key_num = st.session_state.get('current_key_index', 0) + 1
 
-st.sidebar.info(f"🔑 API Status: Using Key **{current_key_num}** of **{total_keys}**")
+st.sidebar.info(f"🔑 **API Status:** Using Key **{current_key_num}** of **{total_keys}**")
 if total_keys > 1:
-    st.sidebar.caption(f"စုစုပေါင်း API Key {total_keys} ခု ချိတ်ဆက်ထားပြီး ဖြစ်သည်။")
+    st.sidebar.caption(f"စုစုပေါင်း API Key {total_keys} ခု ချိတ်ဆက်ထားပါသည်။")
 
 st.sidebar.divider()
 
@@ -73,14 +73,14 @@ async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    """Gemini ဖြင့် Script ထုတ်ယူခြင်း"""
+    """Gemini 2.5 Flash ဖြင့် Script ထုတ်ယူခြင်း"""
     keys = st.secrets["GEMINI_KEYS"]
     
     for _ in range(len(keys)):
         model, active_key = get_model_with_rotation()
         try:
             video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Gemini က Video ကို ဖတ်နေပါတယ်... (Key #{st.session_state.current_key_index + 1} ကို သုံးနေသည်)")
+            st.info(f"🤖 Gemini 2.5 Flash က Video ကို ဖတ်နေပါတယ်... (Key #{st.session_state.current_key_index + 1} ကို သုံးနေသည်)")
 
             # Processing ပြီးအောင် စောင့်ခြင်း
             while video_file.state.name == "PROCESSING":
@@ -93,7 +93,7 @@ def get_recap_script(video_path):
             ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
             ၂။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
             ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-            ၄။ မြန်မာစာလုံးရေ လိုအပ်သလောက်များနိုင်သမျှ များများပြောပြီး ဇာတ်လမ်းကို ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
+            ၄။ မြန်မာစာလုံးရေ ၅၀၀ ထက် မပိုစေဘဲ ဇာတ်လမ်းကို ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
             ၅။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
             """
             
@@ -104,7 +104,7 @@ def get_recap_script(video_path):
         except (exceptions.InvalidArgument, exceptions.Unauthenticated):
             st.warning(f"⚠️ Key #{st.session_state.current_key_index + 1} မှားယွင်းနေသဖြင့် နောက်တစ်ခုသို့ ပြောင်းနေသည်...")
             st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(keys)
-            st.rerun() # UI update ဖြစ်အောင် rerun လုပ်ပေးရပါမယ်
+            st.rerun() 
         except exceptions.ResourceExhausted:
             st.warning(f"⚠️ Key #{st.session_state.current_key_index + 1} Limit ပြည့်သွားသဖြင့် နောက်တစ်ခုသို့ ပြောင်းနေသည်...")
             st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(keys)
@@ -115,7 +115,7 @@ def get_recap_script(video_path):
     return None
 
 # --- Main UI ---
-st.title("🎙️ AI Movie Recap (Gemini Flash)")
+st.title("🎙️ AI Movie Recap (Gemini 2.5 Flash)")
 
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
@@ -133,7 +133,7 @@ if v_file:
         st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur}** စက္ကန့်")
     
     if st.button("📝 ၁။ Generate Recap Script"):
-        with st.spinner("Gemini က Script ရေးနေပါတယ်..."):
+        with st.spinner("Gemini 2.5 Flash က Script ရေးနေပါတယ်..."):
             st.session_state.recap_script = get_recap_script(video_path)
 
     if st.session_state.recap_script:
