@@ -115,7 +115,7 @@ def get_recap_script(video_path):
     return None
 
 # --- Main UI ---
-st.title("🎙️ ကျော်ကြီးပေးတဲ့သောက  (Gemini 2.5 Flash)")
+st.title("🎙️ ကျော်ကြီးပေးတဲ့သောက ")
 
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
