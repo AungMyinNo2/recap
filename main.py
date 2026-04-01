@@ -58,7 +58,7 @@ if total_keys > 1:
 
 st.sidebar.divider()
 
-voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["နီနီ", "သီသီ"])
+voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["နီလာ ", "သီဟ"])
 voice_id = "my-MM-NilarNeural" if "နီလာ" in voice_choice else "my-MM-ThihaNeural"
 
 # အသံအတိုးအကျယ် (%)
@@ -125,12 +125,12 @@ if v_file:
         video_path = tmp.name
 
     v_clip = VideoFileClip(video_path)
-    v_dur = int(v_clip.duration)
+    v_dur = v_clip.duration  # ပိုမိုတိကျစေရန် float အတိုင်းထားသည်
     
     col1, col2 = st.columns([1, 1])
     with col1:
         st.video(v_file)
-        st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur}** စက္ကန့်")
+        st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur:.2f}** စက္ကန့်")
     
     if st.button("📝 ၁။ Generate Recap Script"):
         with st.spinner("Gemini 2.5 Flash က Script ရေးနေပါတယ်..."):
@@ -142,8 +142,9 @@ if v_file:
         st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=300)
 
         if st.button("🚀 ၂။ Generate Audio & Sync"):
-            with st.spinner("Sync ညှိနေပါတယ်..."):
+            with st.spinner("ဗီဒီယိုကြာချိန်နှင့်အညီ အသံနှုန်းကို ညှိနေပါတယ်..."):
                 try:
+                    # အဆင့် ၁။ မူလအသံဖိုင်ကို အရင်ထုတ်ပြီး ကြာချိန်ကို တိုင်းတာသည်
                     mp3_temp = "temp_audio.mp3"
                     asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
                     
@@ -151,9 +152,13 @@ if v_file:
                     initial_dur = audio_clip.duration
                     audio_clip.close()
 
-                    # Auto Sync Logic
-                    speed_change = int((initial_dur / v_dur - 1) * 100)
-                    speed_change = max(min(speed_change, 50), -50) 
+                    # အဆင့် ၂။ ဗီဒီယိုကြာချိန်နှင့် ကိုက်ညီအောင် Rate ကို တွက်ချက်ခြင်း
+                    # (Rate = (Initial Duration / Video Duration - 1) * 100)
+                    speed_change = round(((initial_dur / v_dur) - 1) * 100)
+                    
+                    # အသံမပျက်ယွင်းစေရန် limits သတ်မှတ်ပေးခြင်း (Optional)
+                    # speed_change = max(min(speed_change, 100), -50) 
+                    
                     final_rate = f"{speed_change:+}%"
                     
                     final_mp3 = "final_recap.mp3"
@@ -163,10 +168,19 @@ if v_file:
                         volume=volume_str
                     ))
 
-                    st.success(f"✅ Sync ပြီးပါပြီ! (နှုန်းညှိချက်: {final_rate})")
+                    st.success(f"✅ Sync ပြီးပါပြီ! (မူလ: {initial_dur:.2f}s -> အသစ်: {v_dur:.2f}s | နှုန်း: {final_rate})")
                     st.audio(final_mp3)
+                    
+                    # ဖိုင်အမည် ပြောင်းရန် Input
+                    file_name_input = st.text_input("ဖိုင်အမည် သတ်မှတ်ပါ (Filename):", value="movie_recap")
+                    
                     with open(final_mp3, "rb") as f:
-                        st.download_button("Download Recap MP3", f, "movie_recap.mp3")
+                        st.download_button(
+                            label="📥 Download Recap MP3",
+                            data=f,
+                            file_name=f"{file_name_input}.mp3",
+                            mime="audio/mpeg"
+                        )
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
     
