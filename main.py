@@ -1,5 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
+from google.api_core import exceptions
 import edge_tts
 import asyncio
 import os
@@ -11,115 +12,111 @@ from moviepy.editor import VideoFileClip, AudioFileClip
 # --- Configuration ---
 st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon="🎙️")
 
-# --- API Key Logic (Sticky Key - Session တစ်ခုလုံးအတွက် Key တစ်ခုပဲ သုံးမည်) ---
-def initialize_gemini():
+# --- Session State Initializing ---
+if 'recap_script' not in st.session_state: st.session_state.recap_script = ""
+if 'srt_content' not in st.session_state: st.session_state.srt_content = ""
+if 'current_key_index' not in st.session_state: st.session_state.current_key_index = 0
+if 'video_objects' not in st.session_state: st.session_state.video_objects = {} # Key တစ်ခုချင်းစီအတွက် file object သိမ်းရန်
+
+# --- API Key Management ---
+def get_all_keys():
     if "GEMINI_KEYS" not in st.secrets:
         st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' ထည့်ပေးပါ။")
         st.stop()
-    
-    # Session စစချင်းမှာ Key တစ်ခုပဲ ရွေးပြီး အသေမှတ်ထားမယ်
-    if "active_api_key" not in st.session_state:
-        keys = list(st.secrets["GEMINI_KEYS"])
-        st.session_state.active_api_key = random.choice(keys).strip()
-    
-    genai.configure(api_key=st.session_state.active_api_key)
-    # Model အမည်ကို သင်အသုံးပြုလိုသည့်အတိုင်း 2.5-flash ထားရှိပါသည်
-    return genai.GenerativeModel(model_name="gemini-2.5-flash")
+    return list(st.secrets["GEMINI_KEYS"])
 
-# --- Initialize Session States ---
-if 'recap_script' not in st.session_state: st.session_state.recap_script = ""
-if 'srt_content' not in st.session_state: st.session_state.srt_content = ""
-if 'gemini_file_obj' not in st.session_state: st.session_state.gemini_file_obj = None
-if 'current_v_name' not in st.session_state: st.session_state.current_v_name = ""
+def configure_next_key():
+    keys = get_all_keys()
+    st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(keys)
+    new_key = keys[st.session_state.current_key_index].strip()
+    genai.configure(api_key=new_key)
+    return new_key
 
-# --- Functions ---
-async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"):
-    communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
-    await communicate.save(output_path)
+# --- Robust Upload & Generation Function ---
+def process_with_ai(video_path, prompt):
+    keys = get_all_keys()
+    # လက်ရှိ key ကို အရင်သုံးကြည့်မယ်
+    for _ in range(len(keys)):
+        current_key = keys[st.session_state.current_key_index].strip()
+        genai.configure(api_key=current_key)
+        
+        try:
+            # ၁။ ဒီ Key အတွက် ဗီဒီယို upload တင်ပြီးသားရှိမရှိ စစ်မယ်
+            if current_key not in st.session_state.video_objects:
+                with st.spinner(f"♻️ Key ပြောင်းလဲနေသည်... ဗီဒီယိုကို အသစ်ပြန်တင်နေပါသည်..."):
+                    video_file = genai.upload_file(path=video_path)
+                    while video_file.state.name == "PROCESSING":
+                        time.sleep(2)
+                        video_file = genai.get_file(video_file.name)
+                    st.session_state.video_objects[current_key] = video_file
+            
+            # ၂။ Content ထုတ်မယ်
+            video_obj = st.session_state.video_objects[current_key]
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+            response = model.generate_content([prompt, video_obj])
+            return response.text
 
-def upload_to_gemini(path):
-    """ဗီဒီယိုကို Gemini ဆီ တစ်ကြိမ်သာ Upload တင်ရန်"""
-    model = initialize_gemini()
-    with st.status("🚀 Video ကို Gemini ထံ ပေးပို့နေသည်...", expanded=True) as status:
-        video_file = genai.upload_file(path=path)
-        while video_file.state.name == "PROCESSING":
-            time.sleep(2)
-            video_file = genai.get_file(video_file.name)
-        status.update(label="✅ Video အဆင်သင့်ဖြစ်ပါပြီ!", state="complete", expanded=False)
-    return video_file
+        except exceptions.ResourceExhausted:
+            st.warning(f"⚠️ Key {st.session_state.current_key_index + 1} Quota ပြည့်သွားပါပြီ။ နောက် Key တစ်ခုကို ကြိုးစားနေသည်...")
+            configure_next_key() # Key ပြောင်းမယ်
+            continue # ပတ်လမ်းအစက ပြန်စမယ်
+        except Exception as e:
+            st.error(f"❌ Error ဖြစ်သွားပါသည်: {str(e)}")
+            return None
+    return "API Keys အားလုံး Quota ပြည့်သွားပါပြီ။ ခေတ္တစောင့်ပြီးမှ ပြန်စမ်းပါ။"
 
-# --- Sidebar ---
-st.sidebar.title("⚙️ Audio Settings")
-voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["သီဟ", "နီလာ "])
-voice_id = "my-MM-ThihaNeural" if "သီဟ" in voice_choice else "my-MM-NilarNeural"
-volume_value = st.sidebar.slider("အသံ အတိုး/အလျော့ (%)", -50, 50, 0, step=10)
-volume_str = f"{volume_value:+}%"
+# --- Audio Logic ---
+async def generate_audio(text, output, voice, rate="+0%"):
+    communicate = edge_tts.Communicate(text, voice, rate=rate)
+    await communicate.save(output)
 
 # --- Main UI ---
-st.title("🎙️ Movie Recap Master")
+st.title("🎙️ Movie Recap Master (Stable Version)")
 
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
 if v_file:
-    # ဗီဒီယိုအသစ်တင်လျှင် အရင် data များ ရှင်းထုတ်ရန်
-    if st.session_state.current_v_name != v_file.name:
-        st.session_state.gemini_file_obj = None
+    # ဗီဒီယိုအသစ်တင်လျှင် Cache များရှင်းလင်းရန်
+    if "last_v_name" not in st.session_state or st.session_state.last_v_name != v_file.name:
+        st.session_state.video_objects = {}
         st.session_state.recap_script = ""
         st.session_state.srt_content = ""
-        st.session_state.current_v_name = v_file.name
+        st.session_state.last_v_name = v_file.name
 
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
         tmp.write(v_file.read())
         video_path = tmp.name
 
-    # ဗီဒီယိုပြသခြင်းနှင့် ကြာချိန်ယူခြင်း
     with VideoFileClip(video_path) as v_clip:
         v_dur = v_clip.duration
         st.video(v_file)
-        st.info(f"🎞 ဗီဒီယိုကြာချိန် - {v_dur:.2f} စက္ကန့်")
-
-        # တစ်ကြိမ်သာ Upload တင်ခြင်း (Permission Error မတက်စေရန်)
-        if st.session_state.gemini_file_obj is None:
-            st.session_state.gemini_file_obj = upload_to_gemini(video_path)
-        
-        video_obj = st.session_state.gemini_file_obj
 
         tab1, tab2 = st.tabs(["📝 Recap & Voice", "🎯 SRT Subtitles"])
 
-        # --- Recap Tab ---
         with tab1:
             if st.button("📝 Generate Recap Script"):
-                with st.spinner("Gemini 2.5 က Script ရေးနေပါတယ်..."):
-                    model = initialize_gemini()
-                    prompt = "ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။"
-                    response = model.generate_content([prompt, video_obj])
-                    st.session_state.recap_script = response.text
+                prompt = "ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။"
+                result = process_with_ai(video_path, prompt)
+                if result: st.session_state.recap_script = result
             
             if st.session_state.recap_script:
-                st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=250)
-                if st.button("🚀 Generate Audio & Sync"):
-                    with st.spinner("အသံနှုန်း ညှိနေပါတယ်..."):
-                        mp3_temp = "temp_audio.mp3"
-                        asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
-                        with AudioFileClip(mp3_temp) as audio_clip:
-                            initial_dur = audio_clip.duration
-                        speed_change = round(((initial_dur / v_dur) - 1) * 100)
-                        final_mp3 = "final_recap.mp3"
-                        asyncio.run(generate_audio_file(st.session_state.recap_script, final_mp3, voice_id, rate=f"{speed_change:+}%", volume=volume_str))
-                        st.audio(final_mp3)
-                        st.download_button("📥 Download MP3", open(final_mp3, "rb"), "recap.mp3")
+                st.session_state.recap_script = st.text_area("Edit Script:", st.session_state.recap_script, height=250)
+                if st.button("🚀 Generate Voice"):
+                    mp3_temp = "temp.mp3"
+                    asyncio.run(generate_audio(st.session_state.recap_script, mp3_temp, "my-MM-ThihaNeural"))
+                    with AudioFileClip(mp3_temp) as ac:
+                        speed = f"{round(((ac.duration/v_dur)-1)*100):+}%"
+                    final_mp3 = "final.mp3"
+                    asyncio.run(generate_audio(st.session_state.recap_script, final_mp3, "my-MM-ThihaNeural", rate=speed))
+                    st.audio(final_mp3)
 
-        # --- SRT Tab ---
         with tab2:
             if st.button("🎯 Generate SRT File"):
-                with st.spinner("SRT ဖန်တီးနေပါတယ်..."):
-                    model = initialize_gemini()
-                    prompt = "ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ Standard SRT format (HH:MM:SS,mmm) ဖြင့် Subtitle ထုတ်ပေးပါ။"
-                    response = model.generate_content([prompt, video_obj])
-                    st.session_state.srt_content = response.text
+                prompt = "ဤဗီဒီယိုအတွက် အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ထုတ်ပေးပါ။"
+                result = process_with_ai(video_path, prompt)
+                if result: st.session_state.srt_content = result
             
             if st.session_state.srt_content:
-                st.text_area("SRT Content:", value=st.session_state.srt_content, height=300)
-                st.download_button("📥 Download SRT", st.session_state.srt_content, "subtitles.srt")
+                st.text_area("SRT:", st.session_state.srt_content, height=250)
 
     os.remove(video_path)
