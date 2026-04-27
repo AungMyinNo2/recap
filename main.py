@@ -122,7 +122,6 @@ def get_movie_review_info(video_path):
         return f"Error: {str(e)}"
 
 def get_srt_subtitles(video_path):
-    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle ဖိုင် ထုတ်ယူခြင်း"""
     model, active_key = get_model_with_rotation()
     try:
         video_file = genai.upload_file(path=video_path)
@@ -132,17 +131,24 @@ def get_srt_subtitles(video_path):
             time.sleep(2)
             video_file = genai.get_file(video_file.name)
         
+        # အတင်းအကျပ် မြန်မာလိုပဲ ရေးခိုင်းတဲ့ Strict Prompt
         prompt = """
-        ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
-        စည်းကမ်းချက်-
-        ၁။ Standard SRT format အတိုင်း နံပါတ်စဉ်၊ အချိန် (00:00:00,000 --> 00:00:00,000) နှင့် စာသားပုံစံအတိုင်း ရေးပေးပါ။
-        ၂။ စာသားများကို မြန်မာဘာသာဖြင့်သာ သဘာဝကျကျ ဘာသာပြန် ရေးသားပါ။
-        ၃။ ပြန်စာတွင် SRT data ကလွဲပြီး အခြား ဘာမှမထည့်ပါနှင့်။
+        သင်သည် ကျွမ်းကျင်သော ရုပ်ရှင်ဘာသာပြန်သူတစ်ဦးဖြစ်သည်။ ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
+        
+        တင်းကျပ်သော စည်းကမ်းချက်များ (Strict Rules):
+        ၁။ စာသားအားလုံးကို **မြန်မာဘာသာ (Burmese) တစ်မျိုးတည်းဖြင့်သာ** ရေးသားရမည်။ အင်္ဂလိပ်စာ သို့မဟုတ် တရုတ်စာများကို လုံးဝ (လုံးဝ) မထည့်ပါနှင့်။
+        ၂။ အကယ်၍ ဗီဒီယိုထဲတွင် အခြားဘာသာစကားများ (English/Chinese) ပြောနေလျှင် သို့မဟုတ် စာတန်းပါနေလျှင် ၎င်းတို့ကို မြန်မာဘာသာသို့ တိုက်ရိုက်ဘာသာပြန်ပေးပါ။
+        ၃။ အချိန်မှတ် (Timestamps) များသည် ဗီဒီယိုပါ စကားပြောသံ/ဖြစ်ရပ်များနှင့် စက္ကန့်မလွဲ တိကျနေရမည်။ (Format: 00:00:00,000 --> 00:00:00,000)
+        ၄။ Standard SRT format အတိုင်း နံပါတ်စဉ်၊ အချိန် နှင့် မြန်မာစာသားပုံစံအတိုင်းသာ ရေးပေးပါ။
+        ၅။ ပြန်စာတွင် SRT data ကလွဲပြီး အခြား မည်သည့် ရှင်းလင်းချက် သို့မဟုတ် markdown tags များကိုမှ မထည့်ပါနှင့်။
         """
         response = model.generate_content([prompt, video_file])
         genai.delete_file(video_file.name)
         clean_srt = response.text.replace("```srt", "").replace("```", "").strip()
         return clean_srt
+    except (exceptions.InvalidArgument, exceptions.Unauthenticated, exceptions.ResourceExhausted):
+        st.warning("⚠️ Key အခက်အခဲရှိသဖြင့် အခြား Key တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
+        return get_srt_subtitles(video_path)
     except Exception as e:
         st.error(f"Error: {str(e)}")
         st.stop()
@@ -200,18 +206,18 @@ if v_file:
         # --- TAB 2: SRT Subtitles ---
         with tab2:
             if st.button("🎯 Generate SRT File"):
-                with st.spinner("ဖန်တီးနေပါတယ်..."):
+                with st.spinner("မြန်မာဘာသာဖြင့် အချိန်ကိုက် ဖန်တီးနေပါတယ်..."):
                     st.session_state.srt_content = get_srt_subtitles(video_path)
             if st.session_state.srt_content:
                 st.session_state.srt_content = st.text_area("Edit SRT:", value=st.session_state.srt_content, height=400)
                 srt_n = st.text_input("Filename:", value="subtitles", key="srt_n")
                 st.download_button("📥 Download SRT", st.session_state.srt_content, f"{srt_n}.srt", "text/plain")
 
-        # --- TAB 3: Catchy Title & Review (New) ---
+        # --- TAB 3: Catchy Title & Review ---
         with tab3:
             st.subheader("🌟 Video Title & Compelling Review")
             if st.button("✨ Generate Title & Review"):
-                with st.spinner("နာမည်လှလှလေးနှင့် Review ရေးနေပါတယ်..."):
+                with st.spinner("နာမည်နှင့် Review ရေးနေပါတယ်..."):
                     st.session_state.movie_review = get_movie_review_info(video_path)
             
             if st.session_state.movie_review:
