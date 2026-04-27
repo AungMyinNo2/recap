@@ -122,7 +122,7 @@ def get_movie_review_info(video_path):
         return f"Error: {str(e)}"
 
 def get_srt_subtitles(video_path):
-    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle ဖိုင် ထုတ်ယူခြင်း (Forced Myanmar Prompt)"""
+    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle ဖိုင် ထုတ်ယူခြင်း (Fixing Time Format)"""
     model, active_key = get_model_with_rotation()
     try:
         video_file = genai.upload_file(path=video_path)
@@ -132,24 +132,21 @@ def get_srt_subtitles(video_path):
             time.sleep(2)
             video_file = genai.get_file(video_file.name)
         
-        # အတင်းအကျပ် မြန်မာလိုပဲ ရေးခိုင်းတဲ့ Strict Prompt
         prompt = """
-        သင်သည် ကျွမ်းကျင်သော ရုပ်ရှင်ဘာသာပြန်သူတစ်ဦးဖြစ်သည်။ ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
+        ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
         
-        တင်းကျပ်သော စည်းကမ်းချက်များ (Strict Rules):
-        ၁။ စာသားအားလုံးကို **မြန်မာဘာသာ (Burmese) တစ်မျိုးတည်းဖြင့်သာ** ရေးသားရမည်။ အင်္ဂလိပ်စာ သို့မဟုတ် တရုတ်စာများကို လုံးဝ (လုံးဝ) မထည့်ပါနှင့်။
-        ၂။ အကယ်၍ ဗီဒီယိုထဲတွင် အခြားဘာသာစကားများ (English/Chinese) ပြောနေလျှင် သို့မဟုတ် စာတန်းပါနေလျှင် ၎င်းတို့ကို မြန်မာဘာသာသို့ တိုက်ရိုက်ဘာသာပြန်ပေးပါ။
-        ၃။ အချိန်မှတ် (Timestamps) များသည် ဗီဒီယိုပါ စကားပြောသံ/ဖြစ်ရပ်များနှင့် စက္ကန့်မလွဲ တိကျနေရမည်။ (Format: 00:00:00,000 --> 00:00:00,000)
-        ၄။ Standard SRT format အတိုင်း နံပါတ်စဉ်၊ အချိန် နှင့် မြန်မာစာသားပုံစံအတိုင်းသာ ရေးပေးပါ။
-        ၅။ ပြန်စာတွင် SRT data ကလွဲပြီး အခြား မည်သည့် ရှင်းလင်းချက် သို့မဟုတ် markdown tags များကိုမှ မထည့်ပါနှင့်။
+        **အရေးကြီးဆုံး လိုက်နာရန် အချိန်မှတ် ညွှန်ကြားချက်များ:**
+        ၁။ SRT အချိန်မှတ်များကို (HH:MM:SS,mmm --> HH:MM:SS,mmm) ပုံစံအတိုင်း တိကျစွာ ရေးသားပါ။
+        ၂။ နာရီ၊ မိနစ်၊ စက္ကန့် နှင့် မီလီစက္ကန့် နေရာများ လုံးဝ (လုံးဝ) မလွဲပါစေနှင့်။ (ဥပမာ- 00:01:02,123)
+        ၃။ ဗီဒီယို၏ စက္ကန့်ပိုင်းအလိုက် ဖြစ်ရပ်များနှင့် စကားပြောသံများကို အချိန်ကိုက် မြန်မာဘာသာပြန်ပေးပါ။
+        ၄။ စာသားအားလုံးကို မြန်မာဘာသာ (Burmese) တစ်မျိုးတည်းဖြင့်သာ ရေးသားပါ။
+        ၅။ Standard SRT format အတိုင်း နံပါတ်စဉ်၊ အချိန်မှတ်၊ စာသား ပုံစံကိုသာ သုံးပါ။
+        ၆။ အဖြေတွင် SRT code သက်သက်သာ ပြန်ပေးပါ။ အခြားစာများ မထည့်ပါနှင့်။
         """
         response = model.generate_content([prompt, video_file])
         genai.delete_file(video_file.name)
         clean_srt = response.text.replace("```srt", "").replace("```", "").strip()
         return clean_srt
-    except (exceptions.InvalidArgument, exceptions.Unauthenticated, exceptions.ResourceExhausted):
-        st.warning("⚠️ Key အခက်အခဲရှိသဖြင့် အခြား Key တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
-        return get_srt_subtitles(video_path)
     except Exception as e:
         st.error(f"Error: {str(e)}")
         st.stop()
