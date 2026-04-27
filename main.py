@@ -122,6 +122,7 @@ def get_movie_review_info(video_path):
         return f"Error: {str(e)}"
 
 def get_srt_subtitles(video_path):
+    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle ဖိုင် ထုတ်ယူခြင်း (Forced Myanmar Prompt)"""
     model, active_key = get_model_with_rotation()
     try:
         video_file = genai.upload_file(path=video_path)
