@@ -37,6 +37,8 @@ def get_model_with_rotation():
 
 if 'recap_script' not in st.session_state:
     st.session_state.recap_script = ""
+if 'srt_content' not in st.session_state:
+    st.session_state.srt_content = ""
 
 # --- Sidebar Settings ---
 st.sidebar.title("⚙️ Audio Settings")
@@ -64,7 +66,7 @@ async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    """Gemini 2.5 Flash ဖြင့် Script ထုတ်ယူခြင်း (Random Key Support)"""
+    """Gemini 2.5 Flash ဖြင့် Script ထုတ်ယူခြင်း"""
     model, active_key = get_model_with_rotation()
     try:
         video_file = genai.upload_file(path=video_path)
@@ -94,8 +96,40 @@ def get_recap_script(video_path):
         st.error(f"Error: {str(e)}")
         st.stop()
 
+def get_srt_subtitles(video_path):
+    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle ဖိုင် ထုတ်ယူခြင်း"""
+    model, active_key = get_model_with_rotation()
+    try:
+        video_file = genai.upload_file(path=video_path)
+        st.info(f"🤖 Gemini 2.5 Flash က SRT စာတန်းထိုး ဖန်တီးနေပါတယ်...")
+
+        while video_file.state.name == "PROCESSING":
+            time.sleep(2)
+            video_file = genai.get_file(video_file.name)
+        
+        prompt = """
+        ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
+        စည်းကမ်းချက်-
+        ၁။ Standard SRT format အတိုင်း နံပါတ်စဉ်၊ အချိန် (00:00:00,000 --> 00:00:00,000) နှင့် စာသားပုံစံအတိုင်း ရေးပေးပါ။
+        ၂။ စာသားများကို မြန်မာဘာသာဖြင့်သာ သဘာဝကျကျ ဘာသာပြန် ရေးသားပါ။
+        ၃။ ပြန်စာတွင် SRT data ကလွဲပြီး အခြား မည်သည့် ရှင်းလင်းချက် သို့မဟုတ် markdown tags (ဥပမာ ```srt သို့မဟုတ် ```) ကိုမှ မထည့်ပါနှင့်။ စာသား သက်သက်ပဲ ပြန်ပေးပါ။
+        """
+        response = model.generate_content([prompt, video_file])
+        genai.delete_file(video_file.name)
+        
+        # Markdown backticks များ ပါလာပါက ဖယ်ရှားရန်
+        clean_srt = response.text.replace("```srt", "").replace("```", "").strip()
+        return clean_srt
+        
+    except (exceptions.InvalidArgument, exceptions.Unauthenticated, exceptions.ResourceExhausted):
+        st.warning("⚠️ ရွေးချယ်ထားသော Key တွင် အခက်အခဲရှိသဖြင့် အခြား Key တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
+        return get_srt_subtitles(video_path)
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+        st.stop()
+
 # --- Main UI ---
-st.title("🎙️ Movie Recap ")
+st.title("🎙️ Movie Recap & Subtitle Generator")
 
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
@@ -116,48 +150,76 @@ if v_file:
             st.video(v_file)
             st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur:.2f}** စက္ကန့်")
         
-        if st.button("📝 ၁။ Generate Recap Script"):
-            with st.spinner("Gemini 2.5 Flash က Script ရေးနေပါတယ်..."):
-                st.session_state.recap_script = get_recap_script(video_path)
+        # --- UI Tabs for Two Features ---
+        tab1, tab2 = st.tabs(["📝 Movie Recap & Audio Sync", "🎯 Generate SRT Subtitles"])
+        
+        # --- TAB 1: Movie Recap & Voice Sync ---
+        with tab1:
+            if st.button("📝 ၁။ Generate Recap Script"):
+                with st.spinner("Gemini 2.5 Flash က Script ရေးနေပါတယ်..."):
+                    st.session_state.recap_script = get_recap_script(video_path)
 
-        if st.session_state.recap_script:
-            st.subheader("🖋️ Script ကို ပြင်ဆင်ပါ")
-            st.caption(f"စာလုံးရေ: {len(st.session_state.recap_script)}")
-            st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=300)
+            if st.session_state.recap_script:
+                st.subheader("🖋️ Script ကို ပြင်ဆင်ပါ")
+                st.caption(f"စာလုံးရေ: {len(st.session_state.recap_script)}")
+                st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=300)
 
-            if st.button("🚀 ၂။ Generate Audio & Sync"):
-                with st.spinner("ဗီဒီယိုကြာချိန်နှင့်အညီ အသံနှုန်းကို ညှိနေပါတယ်..."):
-                    try:
-                        mp3_temp = "temp_audio.mp3"
-                        asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
-                        
-                        audio_clip = AudioFileClip(mp3_temp)
-                        initial_dur = audio_clip.duration
-                        audio_clip.close()
+                if st.button("🚀 ၂။ Generate Audio & Sync"):
+                    with st.spinner("ဗီဒီယိုကြာချိန်နှင့်အညီ အသံနှုန်းကို ညှိနေပါတယ်..."):
+                        try:
+                            mp3_temp = "temp_audio.mp3"
+                            asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
+                            
+                            audio_clip = AudioFileClip(mp3_temp)
+                            initial_dur = audio_clip.duration
+                            audio_clip.close()
 
-                        speed_change = round(((initial_dur / v_dur) - 1) * 100)
-                        final_rate = f"{speed_change:+}%"
-                        
-                        final_mp3 = "final_recap.mp3"
-                        asyncio.run(generate_audio_file(
-                            st.session_state.recap_script, final_mp3, voice_id, 
-                            rate=final_rate, 
-                            volume=volume_str
-                        ))
+                            speed_change = round(((initial_dur / v_dur) - 1) * 100)
+                            final_rate = f"{speed_change:+}%"
+                            
+                            final_mp3 = "final_recap.mp3"
+                            asyncio.run(generate_audio_file(
+                                st.session_state.recap_script, final_mp3, voice_id, 
+                                rate=final_rate, 
+                                volume=volume_str
+                            ))
 
-                        st.success(f"✅ Sync ပြီးပါပြီ! (မူလ: {initial_dur:.2f}s -> အသစ်: {v_dur:.2f}s | နှုန်း: {final_rate})")
-                        st.audio(final_mp3)
-                        
-                        file_name_input = st.text_input("ဖိုင်အမည် သတ်မှတ်ပါ (Filename):", value="movie_recap")
-                        
-                        with open(final_mp3, "rb") as f:
-                            st.download_button(
-                                label="📥 Download Recap MP3",
-                                data=f,
-                                file_name=f"{file_name_input}.mp3",
-                                mime="audio/mpeg"
-                            )
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+                            st.success(f"✅ Sync ပြီးပါပြီ! (မူလ: {initial_dur:.2f}s -> အသစ်: {v_dur:.2f}s | နှုန်း: {final_rate})")
+                            st.audio(final_mp3)
+                            
+                            file_name_input = st.text_input("ဖိုင်အမည် သတ်မှတ်ပါ (Filename):", value="movie_recap", key="mp3_name")
+                            
+                            with open(final_mp3, "rb") as f:
+                                st.download_button(
+                                    label="📥 Download Recap MP3",
+                                    data=f,
+                                    file_name=f"{file_name_input}.mp3",
+                                    mime="audio/mpeg"
+                                )
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+                            
+        # --- TAB 2: SRT Subtitle Generator (New Feature) ---
+        with tab2:
+            st.subheader("🎬 Video မှ မြန်မာစာတန်းထိုး (SRT) ထုတ်ယူခြင်း")
+            st.info("ℹ️ ဤစနစ်သည် မူရင်းဗီဒီယိုကို ပြင်ဆင်မည်မဟုတ်ပါ။ သီးခြားအသုံးပြုနိုင်သော .srt ဖိုင်ကိုသာ ထုတ်ပေးမည်ဖြစ်ပါသည်။")
+            
+            if st.button("🎯 Generate SRT File"):
+                with st.spinner("Gemini 2.5 Flash က စာတန်းထိုးများကို ဖန်တီးနေပါတယ်..."):
+                    st.session_state.srt_content = get_srt_subtitles(video_path)
+            
+            if st.session_state.srt_content:
+                st.subheader("🖋️ SRT အချက်အလက်များ")
+                # တည်းဖြတ်နိုင်ရန် TextArea တွင်ပြသခြင်း
+                st.session_state.srt_content = st.text_area("Edit SRT Content:", value=st.session_state.srt_content, height=400)
+                
+                srt_file_name = st.text_input("ဖိုင်အမည် သတ်မှတ်ပါ (Filename):", value="my_subtitles", key="srt_name")
+                
+                st.download_button(
+                    label="📥 Download SRT File",
+                    data=st.session_state.srt_content,
+                    file_name=f"{srt_file_name}.srt",
+                    mime="text/plain"
+                )
         
         v_clip.close()
