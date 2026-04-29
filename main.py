@@ -14,14 +14,15 @@ st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon=
 
 # --- API Key Rotation Logic (Randomized) ---
 def get_model_with_rotation():
-    """Secrets ထဲက GEMINI_KEYS ကို Random (ကျပန်း) ရွေးချယ်ပေးမည့် Function"""
+    """Secrets ထဲက GEMINI_KEYS ကို Index ပါတွဲပြီး Random (ကျပန်း) ရွေးချယ်ပေးမည့် Function"""
     if "GEMINI_KEYS" not in st.secrets:
         st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List ပုံစံ) ကို အရင်ထည့်ပေးပါ။")
         st.stop()
     
-    keys = list(st.secrets["GEMINI_KEYS"]) 
-    random.shuffle(keys)
-    return keys
+    # Key တစ်ခုချင်းစီကို ၎င်း၏ မူရင်းနံပါတ် (Index) နှင့် တွဲလိုက်သည် (ဥပမာ - [(1, "key1"), (2, "key2")])
+    keys_with_indices = list(enumerate(st.secrets["GEMINI_KEYS"], start=1))
+    random.shuffle(keys_with_indices)
+    return keys_with_indices
 
 if 'recap_script' not in st.session_state:
     st.session_state.recap_script = ""
@@ -54,16 +55,16 @@ async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    """Gemini 2.5 Flash ဖြင့် Script ထုတ်ယူခြင်း (Auto Key Rotation)"""
-    keys = get_model_with_rotation()
+    """Gemini 2.5 Flash ဖြင့် Script ထုတ်ယူခြင်း (Auto Key Rotation & Number Display)"""
+    indexed_keys = get_model_with_rotation()
     
-    for current_key in keys:
+    for key_no, current_key in indexed_keys:
         try:
             genai.configure(api_key=current_key.strip())
             model = genai.GenerativeModel(model_name="gemini-2.5-flash")
             
             video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Gemini က Video ကို ဖတ်နေပါတယ်... (Key: {current_key[:5]}***)")
+            st.info(f"🤖 Gemini က Video ကို ဖတ်နေပါတယ်... (Key နံပါတ် - {key_no})")
 
             while video_file.state.name == "PROCESSING":
                 time.sleep(2)
@@ -83,26 +84,26 @@ def get_recap_script(video_path):
             return response.text
             
         except exceptions.ResourceExhausted:
-            st.warning(f"⚠️ Key ({current_key[:5]}***) Limit ပြည့်သွားပါပြီ။ နောက် Key တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
+            st.warning(f"⚠️ Key နံပါတ် {key_no} Limit ပြည့်သွားပါပြီ။ နောက်တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
             continue
         except Exception as e:
-            st.error(f"Error with key {current_key[:5]}: {str(e)}")
+            st.error(f"Error with Key No. {key_no}: {str(e)}")
             continue
             
     st.error("❌ API Keys အားလုံး Limit ပြည့်နေပါသည် သို့မဟုတ် အလုပ်မလုပ်ပါ။")
     st.stop()
 
 def get_movie_review_info(video_path):
-    """ဗီဒီယိုအတွက် ဆွဲဆောင်မှုရှိသော အမည်နှင့် Review (Auto Key Rotation)"""
-    keys = get_model_with_rotation()
+    """ဗီဒီယိုအတွက် ဆွဲဆောင်မှုရှိသော အမည်နှင့် Review (Auto Key Rotation & Number Display)"""
+    indexed_keys = get_model_with_rotation()
     
-    for current_key in keys:
+    for key_no, current_key in indexed_keys:
         try:
             genai.configure(api_key=current_key.strip())
             model = genai.GenerativeModel(model_name="gemini-2.5-flash")
             
             video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Gemini က နာမည်နှင့် Review ကို စဉ်းစားနေပါတယ်... (Key: {current_key[:5]}***)")
+            st.info(f"🤖 Gemini က နာမည်နှင့် Review ကို စဉ်းစားနေပါတယ်... (Key နံပါတ် - {key_no})")
 
             while video_file.state.name == "PROCESSING":
                 time.sleep(2)
@@ -123,16 +124,16 @@ def get_movie_review_info(video_path):
     return "Error: All keys exhausted or failed."
 
 def get_srt_subtitles(video_path):
-    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle (Auto Key Rotation)"""
-    keys = get_model_with_rotation()
+    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle (Auto Key Rotation & Number Display)"""
+    indexed_keys = get_model_with_rotation()
     
-    for current_key in keys:
+    for key_no, current_key in indexed_keys:
         try:
             genai.configure(api_key=current_key.strip())
             model = genai.GenerativeModel(model_name="gemini-2.5-flash")
             
             video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Gemini က SRT ဖန်တီးနေပါတယ်... (Key: {current_key[:5]}***)")
+            st.info(f"🤖 Gemini က SRT ဖန်တီးနေပါတယ်... (Key နံပါတ် - {key_no})")
 
             while video_file.state.name == "PROCESSING":
                 time.sleep(2)
@@ -142,7 +143,7 @@ def get_srt_subtitles(video_path):
             ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
             **တင်းကျပ်စွာ လိုက်နာရန် Format ညွှန်ကြားချက်:**
             ၁။ အချိန်မှတ်ကို တိကျသော Standard SRT format အတိုင်း **HH:MM:SS,mmm --> HH:MM:SS,mmm** ပုံစံဖြင့်သာ ရေးသားပါ။
-            ၂။ **နာရီနေရာ (00:) လုံးဝ မကျန်ခဲ့ပါစေနှင့်။** "Standard SRT format (HH:MM:SS,mmm) အပြည့်အစုံ သုံးပေးပါ"
+            ၂။ **နာရီနေရာ (00:) လုံးဝ မကျန်ခဲ့ပါစေနှင့်။**
             ၃။ စက္ကန့်နှင့် မီလီစက္ကန့်ကြားတွင် **ကော်မာ (,)** ကိုသာ အသုံးပြုပါ။
             ၄။ SRT data သက်သက်သာ ပြန်ပေးပါ။
             """
@@ -223,6 +224,6 @@ if v_file:
             if st.session_state.movie_review:
                 st.markdown("### 🖋️ ရလဒ်")
                 st.write(st.session_state.movie_review)
-                st.info("အပေါ်က စာသားများကို ကူးယူပြီး အသုံးပြုနိုင်ပါသည်။")
+                st.info("အပေါ်က စာသားများကို ကူးယူပြီး Social Media များတွင် အသုံးပြုနိုင်ပါသည်။")
 
         v_clip.close()
