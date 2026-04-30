@@ -256,32 +256,66 @@ for key in ['recap_script', 'srt_content', 'movie_review']:
         st.session_state[key] = ""
 
 # ─────────────────────────────────────────
-# API KEY ROTATION
+# API KEY ROTATION — rotate at generate_content level
 # ─────────────────────────────────────────
-def get_model():
+def get_shuffled_keys():
     if "GEMINI_KEYS" not in st.secrets:
         st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List) ကို ထည့်ပေးပါ။")
         st.stop()
     keys = list(st.secrets["GEMINI_KEYS"])
     random.shuffle(keys)
-    for key in keys:
-        try:
-            genai.configure(api_key=key.strip())
-            model = genai.GenerativeModel("gemini-2.5-flash")
-            return model
-        except Exception:
-            continue
-    st.error("❌ API Keys အားလုံး အလုပ်မလုပ်ပါ။")
-    st.stop()
+    return keys
 
-def upload_and_wait(video_path):
-    """Upload video and wait for processing to complete."""
+def upload_and_wait(video_path, api_key):
+    """Upload video with a specific key and wait for processing."""
+    genai.configure(api_key=api_key)
     video_file = genai.upload_file(path=video_path)
     with st.spinner("⏳ Video ကို Gemini ဆီ တင်နေပါသည်..."):
         while video_file.state.name == "PROCESSING":
             time.sleep(2)
             video_file = genai.get_file(video_file.name)
     return video_file
+
+def generate_with_rotation(video_path, prompt, post_process=None):
+    """
+    Upload video once per key attempt, call generate_content,
+    rotate key on 429/quota errors. Returns response text.
+    """
+    keys = get_shuffled_keys()
+    last_error = None
+
+    for i, key in enumerate(keys):
+        key = key.strip()
+        try:
+            st.info(f"🔑 Key {i+1}/{len(keys)} ဖြင့် ကြိုးစားနေပါသည်...")
+            video_file = upload_and_wait(video_path, key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content([prompt, video_file])
+            try:
+                genai.delete_file(video_file.name)
+            except Exception:
+                pass
+            result = response.text
+            return post_process(result) if post_process else result
+        except exceptions.ResourceExhausted as e:
+            last_error = e
+            st.warning(f"⚠️ Key {i+1} — Quota ပြည့်နေပါသည်။ နောက် Key ဖြင့် ကြိုးစားနေပါသည်...")
+            try:
+                genai.delete_file(video_file.name)
+            except Exception:
+                pass
+            continue
+        except (exceptions.InvalidArgument, exceptions.Unauthenticated) as e:
+            last_error = e
+            st.warning(f"⚠️ Key {i+1} — Invalid/Unauthenticated။ ကျော်သွားပါသည်...")
+            continue
+        except Exception as e:
+            last_error = e
+            st.warning(f"⚠️ Key {i+1} — Error: {str(e)[:80]}। ကျော်သွားပါသည်...")
+            continue
+
+    st.error(f"❌ Keys အားလုံး ({len(keys)} ခု) မအောင်မြင်ပါ။ နောက်မှ ထပ်ကြိုးစားပါ။\nLast error: {last_error}")
+    st.stop()
 
 # ─────────────────────────────────────────
 # CORE FUNCTIONS
@@ -291,8 +325,6 @@ async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    model = get_model()
-    video_file = upload_and_wait(video_path)
     prompt = """
     ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
     စည်းကမ်းချက်-
@@ -302,18 +334,9 @@ def get_recap_script(video_path):
     ၄။ မြန်မာစာလုံးများများဖြင့် ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
     ၅။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
     """
-    try:
-        response = model.generate_content([prompt, video_file])
-        genai.delete_file(video_file.name)
-        return response.text
-    except Exception as e:
-        st.error(f"Error: {e}")
-        genai.delete_file(video_file.name)
-        st.stop()
+    return generate_with_rotation(video_path, prompt)
 
 def get_movie_review_info(video_path):
-    model = get_model()
-    video_file = upload_and_wait(video_path)
     prompt = """
     ဤဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်စိတ်ဝင်စားသွားအောင် ဆွဲဆောင်မှုရှိသော မြန်မာဘာသာ
     ရုပ်ရှင်အမည် (Catchy Title) တစ်ခု နှင့် လူကြည့်များစေမည့် Review တစ်ခု ရေးသားပေးပါ။
@@ -321,17 +344,9 @@ def get_movie_review_info(video_path):
     Review: [စာသား]
     ပုံစံအတိုင်းပဲ ပြန်ပေးပါ။
     """
-    try:
-        response = model.generate_content([prompt, video_file])
-        genai.delete_file(video_file.name)
-        return response.text
-    except Exception as e:
-        genai.delete_file(video_file.name)
-        return f"Error: {e}"
+    return generate_with_rotation(video_path, prompt)
 
 def get_srt_subtitles(video_path):
-    model = get_model()
-    video_file = upload_and_wait(video_path)
     prompt = """
     ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
     Format ညွှန်ကြားချက်-
@@ -345,14 +360,10 @@ def get_srt_subtitles(video_path):
     00:00:01,500 --> 00:00:04,200
     မင်္ဂလာပါ ခင်ဗျာ။
     """
-    try:
-        response = model.generate_content([prompt, video_file])
-        genai.delete_file(video_file.name)
-        return response.text.replace("```srt", "").replace("```", "").strip()
-    except Exception as e:
-        st.error(f"Error: {e}")
-        genai.delete_file(video_file.name)
-        st.stop()
+    return generate_with_rotation(
+        video_path, prompt,
+        post_process=lambda t: t.replace("```srt", "").replace("```", "").strip()
+    )
 
 # ─────────────────────────────────────────
 # SIDEBAR
