@@ -6,225 +6,565 @@ import asyncio
 import os
 import tempfile
 import time
-import random  
+import random
 from moviepy.editor import VideoFileClip, AudioFileClip
 
-# --- Configuration ---
-st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon="🎙️")
+# ─────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────
+st.set_page_config(
+    page_title="Movie Recap Master",
+    layout="wide",
+    page_icon="🎬",
+    initial_sidebar_state="expanded",
+)
 
-# --- API Key Rotation Logic (Randomized) ---
-def get_model_with_rotation():
-    """Secrets ထဲက GEMINI_KEYS ကို Random (ကျပန်း) ရွေးချယ်ပေးမည့် Function"""
+# ─────────────────────────────────────────
+# CUSTOM CSS — Cinematic Dark Theme
+# ─────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@300;400;600;700&display=swap');
+
+/* ── Root palette ── */
+:root {
+    --bg:       #0a0a0f;
+    --surface:  #12121a;
+    --card:     #1a1a26;
+    --border:   #2a2a3a;
+    --accent:   #e8b400;
+    --accent2:  #ff5e5b;
+    --text:     #e8e8f0;
+    --muted:    #7070a0;
+    --radius:   14px;
+}
+
+/* ── Global ── */
+html, body, [data-testid="stAppViewContainer"] {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+    font-family: 'Nunito', sans-serif !important;
+}
+
+[data-testid="stSidebar"] {
+    background: var(--surface) !important;
+    border-right: 1px solid var(--border) !important;
+}
+
+/* ── Header strip ── */
+.recap-header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-radius: var(--radius);
+    padding: 2rem 2.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+}
+.recap-header::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(232,180,0,0.08) 0%, transparent 60%);
+    pointer-events: none;
+}
+.recap-header h1 {
+    font-family: 'Bebas Neue', sans-serif !important;
+    font-size: 3.2rem !important;
+    letter-spacing: 4px;
+    color: var(--accent) !important;
+    margin: 0 !important;
+    text-shadow: 0 0 40px rgba(232,180,0,0.4);
+}
+.recap-header p {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin: 0.3rem 0 0;
+    letter-spacing: 1px;
+}
+
+/* ── Stat badges ── */
+.stat-row { display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }
+.stat-badge {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+.stat-badge strong { color: var(--accent); font-size: 1rem; }
+
+/* ── Section labels ── */
+.section-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+/* ── Upload zone ── */
+[data-testid="stFileUploader"] {
+    background: var(--card) !important;
+    border: 2px dashed var(--border) !important;
+    border-radius: var(--radius) !important;
+    transition: border-color 0.3s !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: var(--accent) !important;
+}
+
+/* ── Tabs ── */
+[data-testid="stTabs"] button {
+    font-family: 'Bebas Neue', sans-serif !important;
+    font-size: 1rem !important;
+    letter-spacing: 2px !important;
+    color: var(--muted) !important;
+    border-radius: 8px 8px 0 0 !important;
+    transition: all 0.2s !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: var(--accent) !important;
+    border-bottom: 2px solid var(--accent) !important;
+    background: rgba(232,180,0,0.06) !important;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    background: linear-gradient(135deg, var(--accent) 0%, #c9a200 100%) !important;
+    color: #0a0a0f !important;
+    font-family: 'Bebas Neue', sans-serif !important;
+    font-size: 1rem !important;
+    letter-spacing: 2px !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 2rem !important;
+    transition: all 0.2s !important;
+    box-shadow: 0 4px 15px rgba(232,180,0,0.25) !important;
+}
+.stButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 25px rgba(232,180,0,0.4) !important;
+}
+.stButton > button:active { transform: translateY(0) !important; }
+
+/* Download button */
+[data-testid="stDownloadButton"] > button {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f3460 100%) !important;
+    color: #a0c4ff !important;
+    border: 1px solid #2a4a7f !important;
+    box-shadow: 0 4px 15px rgba(0,80,200,0.2) !important;
+}
+[data-testid="stDownloadButton"] > button:hover {
+    box-shadow: 0 6px 25px rgba(0,80,200,0.35) !important;
+}
+
+/* ── Text areas ── */
+.stTextArea textarea {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    color: var(--text) !important;
+    font-family: 'Nunito', sans-serif !important;
+    font-size: 0.92rem !important;
+}
+.stTextArea textarea:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(232,180,0,0.15) !important;
+}
+
+/* ── Text input ── */
+.stTextInput input {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    color: var(--text) !important;
+}
+.stTextInput input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(232,180,0,0.15) !important;
+}
+
+/* ── Radio / slider ── */
+.stRadio label, .stSlider label {
+    color: var(--text) !important;
+    font-size: 0.92rem !important;
+}
+.stRadio [data-testid="stWidgetLabel"] {
+    color: var(--muted) !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 1px !important;
+    text-transform: uppercase !important;
+}
+
+/* ── Alerts / info ── */
+.stAlert {
+    border-radius: 10px !important;
+    border-left: 4px solid var(--accent) !important;
+    background: rgba(232,180,0,0.07) !important;
+}
+
+/* ── Spinner ── */
+[data-testid="stSpinner"] { color: var(--accent) !important; }
+
+/* ── Video player ── */
+video { border-radius: var(--radius) !important; }
+
+/* ── Sidebar labels ── */
+[data-testid="stSidebar"] .section-label {
+    font-size: 0.75rem;
+    margin-top: 1rem;
+}
+
+/* ── Info card in results ── */
+.result-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin: 1rem 0;
+    line-height: 1.8;
+}
+.result-card p { color: var(--text); margin: 0; }
+
+/* ── Divider ── */
+hr { border-color: var(--border) !important; }
+
+/* ── Sidebar title ── */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-family: 'Bebas Neue', sans-serif !important;
+    letter-spacing: 2px !important;
+    color: var(--accent) !important;
+}
+
+/* Hide streamlit branding */
+#MainMenu, footer, header { visibility: hidden; }
+.stDeployButton { display: none; }
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────
+for key in ['recap_script', 'srt_content', 'movie_review']:
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
+# ─────────────────────────────────────────
+# API KEY ROTATION
+# ─────────────────────────────────────────
+def get_model():
     if "GEMINI_KEYS" not in st.secrets:
-        st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List ပုံစံ) ကို အရင်ထည့်ပေးပါ။")
+        st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List) ကို ထည့်ပေးပါ။")
         st.stop()
-    
-    keys = list(st.secrets["GEMINI_KEYS"]) 
+    keys = list(st.secrets["GEMINI_KEYS"])
     random.shuffle(keys)
-
-    for i, current_key in enumerate(keys):
-        current_key = current_key.strip()
+    for key in keys:
         try:
-            genai.configure(api_key=current_key)
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-            st.session_state.active_key_display = current_key[:10] + "..." 
-            return model, current_key
+            genai.configure(api_key=key.strip())
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            return model
         except Exception:
             continue
-            
-    st.error("❌ API Keys အားလုံး အလုပ်မလုပ်ပါ။ (Invalid API Key Error ဖြစ်နိုင်ပါသည်)")
+    st.error("❌ API Keys အားလုံး အလုပ်မလုပ်ပါ။")
     st.stop()
 
-if 'recap_script' not in st.session_state:
-    st.session_state.recap_script = ""
-if 'srt_content' not in st.session_state:
-    st.session_state.srt_content = ""
-if 'movie_review' not in st.session_state:
-    st.session_state.movie_review = ""
+def upload_and_wait(video_path):
+    """Upload video and wait for processing to complete."""
+    video_file = genai.upload_file(path=video_path)
+    with st.spinner("⏳ Video ကို Gemini ဆီ တင်နေပါသည်..."):
+        while video_file.state.name == "PROCESSING":
+            time.sleep(2)
+            video_file = genai.get_file(video_file.name)
+    return video_file
 
-# --- Sidebar Settings ---
-st.sidebar.title("⚙️ Audio Settings")
-
-keys_list = st.secrets.get("GEMINI_KEYS", [])
-total_keys = len(keys_list)
-
-st.sidebar.info(f"🔑 **API System:** ကျပန်း Mode")
-st.sidebar.caption(f"စုစုပေါင်း API Key {total_keys} ခုကို Random စနစ်ဖြင့် လှည့်သုံးနေပါသည်။")
-
-st.sidebar.divider()
-
-# သီဟ ကို အပေါ်တင်ပြီး နီလာကို အောက်ချပေးထားပါသည်
-voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["သီဟ", "နီလာ "])
-voice_id = "my-MM-ThihaNeural" if "သီဟ" in voice_choice else "my-MM-NilarNeural"
-
-# အသံအတိုးအကျယ် (%)
-volume_value = st.sidebar.slider("အသံ အတိုး/အလျော့ (%)", -50, 50, 0, step=10)
-volume_str = f"{volume_value:+}%"
-
-# --- Functions ---
-
+# ─────────────────────────────────────────
+# CORE FUNCTIONS
+# ─────────────────────────────────────────
 async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"):
-    """Edge-TTS ဖြင့် အသံဖိုင် ထုတ်ပေးခြင်း"""
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     await communicate.save(output_path)
 
 def get_recap_script(video_path):
-    """Gemini 2.5 Flash ဖြင့် Script ထုတ်ယူခြင်း"""
-    model, active_key = get_model_with_rotation()
+    model = get_model()
+    video_file = upload_and_wait(video_path)
+    prompt = """
+    ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
+    စည်းကမ်းချက်-
+    ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
+    ၂။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
+    ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
+    ၄။ မြန်မာစာလုံးများများဖြင့် ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
+    ၅။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
+    """
     try:
-        video_file = genai.upload_file(path=video_path)
-        st.info(f"🤖 Gemini 2.5 Flash က Video ကို ဖတ်နေပါတယ်...")
-
-        while video_file.state.name == "PROCESSING":
-            time.sleep(2)
-            video_file = genai.get_file(video_file.name)
-        
-        prompt = """
-        ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
-        စည်းကမ်းချက်-
-        ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
-        ၂။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
-        ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-        ၄။ မြန်မာစာလုံးရေ လိုအပ်သလောက်စာလုံးရေ များများရေးနဲ့ ဇာတ်လမ်းကို ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
-        ၅။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
-        """
         response = model.generate_content([prompt, video_file])
         genai.delete_file(video_file.name)
         return response.text
-        
-    except (exceptions.InvalidArgument, exceptions.Unauthenticated, exceptions.ResourceExhausted):
-        st.warning("⚠️ Key အခက်အခဲရှိသဖြင့် အခြား Key တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
-        return get_recap_script(video_path)
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error: {e}")
+        genai.delete_file(video_file.name)
         st.stop()
 
 def get_movie_review_info(video_path):
-    """ဗီဒီယိုအတွက် ဆွဲဆောင်မှုရှိသော အမည်နှင့် Review ရေးသားပေးခြင်း"""
-    model, active_key = get_model_with_rotation()
+    model = get_model()
+    video_file = upload_and_wait(video_path)
+    prompt = """
+    ဤဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်စိတ်ဝင်စားသွားအောင် ဆွဲဆောင်မှုရှိသော မြန်မာဘာသာ
+    ရုပ်ရှင်အမည် (Catchy Title) တစ်ခု နှင့် လူကြည့်များစေမည့် Review တစ်ခု ရေးသားပေးပါ။
+    Title: [အမည်]
+    Review: [စာသား]
+    ပုံစံအတိုင်းပဲ ပြန်ပေးပါ။
+    """
     try:
-        video_file = genai.upload_file(path=video_path)
-        st.info(f"🤖 Gemini 2.5 Flash က နာမည်နှင့် Review ကို စဉ်းစားနေပါတယ်...")
-
-        while video_file.state.name == "PROCESSING":
-            time.sleep(2)
-            video_file = genai.get_file(video_file.name)
-        
-        prompt = """
-        ဤဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်စိတ်ဝင်စားသွားအောင် ဆွဲဆောင်မှုရှိသော မြန်မာဘာသာ ရုပ်ရှင်အမည် (Catchy Title) တစ်ခု နှင့် လူကြည့်များစေမည့် စိတ်လှုပ်ရှားဖွယ်ရာ Review တစ်ခုကို ရေးသားပေးပါ။ 
-        Title: [အမည်]
-        Review: [စာသား] ပုံစံအတိုင်း ပြန်ပေးပါ။
-        """
         response = model.generate_content([prompt, video_file])
         genai.delete_file(video_file.name)
         return response.text
     except Exception as e:
-        return f"Error: {str(e)}"
+        genai.delete_file(video_file.name)
+        return f"Error: {e}"
 
 def get_srt_subtitles(video_path):
-    """Gemini 2.5 Flash ဖြင့် မြန်မာဘာသာ SRT Subtitle ဖိုင် ထုတ်ယူခြင်း (Strict Formatting)"""
-    model, active_key = get_model_with_rotation()
+    model = get_model()
+    video_file = upload_and_wait(video_path)
+    prompt = """
+    ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
+    Format ညွှန်ကြားချက်-
+    ၁။ HH:MM:SS,mmm --> HH:MM:SS,mmm (Standard SRT) ပုံစံ တိကျစွာ သုံးပါ။
+    ၂။ နာရီနေရာ (00:) မကျန်ပါစေနှင့်။
+    ၃။ Comma (,) ကိုသာ မီလီစက္ကန့်ကြားသုံးပါ။
+    ၄။ မြန်မာဘာသာသက်သက်သာ ရေးပါ။
+    ၅။ SRT data သက်သက်သာ ပြန်ပေးပါ။
+    Example:
+    1
+    00:00:01,500 --> 00:00:04,200
+    မင်္ဂလာပါ ခင်ဗျာ။
+    """
     try:
-        video_file = genai.upload_file(path=video_path)
-        st.info(f"🤖 Gemini 2.5 Flash က SRT စာတန်းထိုး ဖန်တီးနေပါတယ်...")
-
-        while video_file.state.name == "PROCESSING":
-            time.sleep(2)
-            video_file = genai.get_file(video_file.name)
-        
-        prompt = """
-        ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
-        
-        **တင်းကျပ်စွာ လိုက်နာရန် Format ညွှန်ကြားချက်:**
-        ၁။ အချိန်မှတ်ကို တိကျသော Standard SRT format အတိုင်း **HH:MM:SS,mmm --> HH:MM:SS,mmm** (နာရီ ၂ လုံး : မိနစ် ၂ လုံး : စက္ကန့် ၂ လုံး , မီလီစက္ကန့် ၃ လုံး) ပုံစံဖြင့်သာ ရေးသားပါ။
-        ၂။ **နာရီနေရာ (00:) လုံးဝ မကျန်ခဲ့ပါစေနှင့်။** (ဥပမာ- 00:00:05,120 --> 00:00:08,450)video ဖိုင်သည် မိနစ်ပိုင်းသာရှိပါသည် 
-        ၃။ စက္ကန့်နှင့် မီလီစက္ကန့်ကြားတွင် **ကော်မာ (,)** ကိုသာ အသုံးပြုပါ။ ကော်လံ (:) မသုံးပါနှင့်။
-        ၄။ စာသားအားလုံးကို မြန်မာဘာသာဖြင့်သာ ရေးပါ။
-        ၅။ SRT data သက်သက်သာ ပြန်ပေးပါ။
-        
-        **Example Format:**
-        1
-        00:00:01,500 --> 00:00:04,200
-        မင်္ဂလာပါ ခင်ဗျာ။
-        """
         response = model.generate_content([prompt, video_file])
         genai.delete_file(video_file.name)
-        clean_srt = response.text.replace("```srt", "").replace("```", "").strip()
-        return clean_srt
+        return response.text.replace("```srt", "").replace("```", "").strip()
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error: {e}")
+        genai.delete_file(video_file.name)
         st.stop()
 
-# --- Main UI ---
-st.title("🎙️ Movie Recap Master")
+# ─────────────────────────────────────────
+# SIDEBAR
+# ─────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 🎬 SETTINGS")
 
-v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
+    keys_list = st.secrets.get("GEMINI_KEYS", [])
+    st.markdown(f"""
+    <div style='background:#1a1a26;border:1px solid #2a2a3a;border-radius:10px;padding:1rem;margin-bottom:1rem;'>
+        <div style='color:#7070a0;font-size:0.75rem;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.5rem;'>API System</div>
+        <div style='color:#e8b400;font-family:"Bebas Neue",sans-serif;font-size:1.1rem;letter-spacing:2px;'>🎲 RANDOM MODE</div>
+        <div style='color:#7070a0;font-size:0.8rem;margin-top:0.3rem;'>Keys {len(keys_list)} ခု — Random Rotation</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown('<div class="section-label">🎙 Voice Selection</div>', unsafe_allow_html=True)
+    voice_choice = st.radio(
+        "Narrator:",
+        ["🎤 သီဟ (Male)", "🎤 နီလာ (Female)"],
+        label_visibility="collapsed"
+    )
+    voice_id = "my-MM-ThihaNeural" if "သီဟ" in voice_choice else "my-MM-NilarNeural"
+
+    st.divider()
+
+    st.markdown('<div class="section-label">🔊 Volume</div>', unsafe_allow_html=True)
+    volume_value = st.slider("Volume (%)", -50, 50, 0, step=10, label_visibility="collapsed")
+    volume_str = f"{volume_value:+}%"
+
+    st.divider()
+    st.markdown("""
+    <div style='color:#3a3a5a;font-size:0.75rem;text-align:center;line-height:1.6;'>
+        Movie Recap Master<br>Powered by Gemini 2.5 Flash
+    </div>
+    """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────
+# MAIN CONTENT
+# ─────────────────────────────────────────
+st.markdown("""
+<div class="recap-header">
+    <h1>🎬 MOVIE RECAP MASTER</h1>
+    <p>AI-Powered Myanmar Movie Narrator · Gemini 2.5 Flash · Edge TTS</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Upload zone
+st.markdown('<div class="section-label">📁 Upload Video</div>', unsafe_allow_html=True)
+v_file = st.file_uploader(
+    "MP4, MOV, AVI — Max 200MB",
+    type=["mp4", "mov", "avi"],
+    label_visibility="collapsed"
+)
 
 if v_file:
     if v_file.size > 200 * 1024 * 1024:
-        st.error("❌ ဖိုင်ဆိုဒ်က 200MB ထက် ကြီးနေပါသည်။")
-    else:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
-            tmp.write(v_file.read())
-            video_path = tmp.name
+        st.error("❌ File ဆိုဒ် 200MB ကျော်နေပါသည်။")
+        st.stop()
 
-        v_clip = VideoFileClip(video_path)
-        v_dur = v_clip.duration  
-        
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.video(v_file)
-            st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur:.2f}** စက္ကန့်")
-        
-        tab1, tab2, tab3 = st.tabs(["📝 Recap & Voice", "🎯 SRT Subtitles", "🎬 Catchy Title & Review"])
-        
-        # --- TAB 1: Movie Recap ---
-        with tab1:
-            if st.button("📝 Generate Recap Script"):
-                with st.spinner("Script ရေးနေပါတယ်..."):
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
+        tmp.write(v_file.read())
+        video_path = tmp.name
+
+    v_clip = VideoFileClip(video_path)
+    v_dur = v_clip.duration
+    v_clip.close()
+
+    # Video preview + stats
+    col_vid, col_info = st.columns([3, 2])
+    with col_vid:
+        st.video(v_file)
+
+    with col_info:
+        size_mb = v_file.size / (1024 * 1024)
+        mins = int(v_dur // 60)
+        secs = int(v_dur % 60)
+        st.markdown(f"""
+        <div style='background:#12121a;border:1px solid #2a2a3a;border-radius:14px;padding:1.5rem;height:100%;'>
+            <div class='section-label'>📊 Video Info</div>
+            <div class='stat-row'>
+                <div class='stat-badge'>⏱ <strong>{mins}:{secs:02d}</strong></div>
+                <div class='stat-badge'>💾 <strong>{size_mb:.1f} MB</strong></div>
+            </div>
+            <div style='color:#7070a0;font-size:0.85rem;margin-top:1rem;line-height:1.8;'>
+                ✅ Video တင်ပြီးပါပြီ<br>
+                ✅ Gemini API Ready<br>
+                ✅ {voice_choice} Voice Ready<br>
+                ✅ Volume: {volume_str}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── TABS ──
+    tab1, tab2, tab3 = st.tabs(["📝  RECAP & VOICE", "🎯  SRT SUBTITLES", "✨  TITLE & REVIEW"])
+
+    # ── TAB 1: Recap ──
+    with tab1:
+        col_btn1, _ = st.columns([1, 3])
+        with col_btn1:
+            if st.button("📝 Generate Script", use_container_width=True):
+                with st.spinner("🤖 Gemini က Script ရေးနေပါတယ်..."):
                     st.session_state.recap_script = get_recap_script(video_path)
 
-            if st.session_state.recap_script:
-                st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=300)
-                if st.button("🚀 Generate Audio & Sync"):
-                    with st.spinner("အသံနှုန်း ညှိနေပါတယ်..."):
+        if st.session_state.recap_script:
+            st.markdown('<div class="section-label" style="margin-top:1rem;">✏️ Edit Script</div>', unsafe_allow_html=True)
+            st.session_state.recap_script = st.text_area(
+                "Script",
+                value=st.session_state.recap_script,
+                height=280,
+                label_visibility="collapsed"
+            )
+
+            col_gen, _ = st.columns([1, 3])
+            with col_gen:
+                if st.button("🚀 Generate Audio & Sync", use_container_width=True):
+                    with st.spinner("🎙 အသံ ဖန်တီးနေပါတယ်..."):
                         try:
-                            mp3_temp = "temp_audio.mp3"
-                            asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
+                            mp3_temp = tempfile.mktemp(suffix=".mp3")
+                            asyncio.run(generate_audio_file(
+                                st.session_state.recap_script, mp3_temp, voice_id
+                            ))
                             audio_clip = AudioFileClip(mp3_temp)
-                            initial_dur = audio_clip.duration
+                            audio_dur = audio_clip.duration
                             audio_clip.close()
-                            speed_change = round(((initial_dur / v_dur) - 1) * 100)
-                            final_rate = f"{speed_change:+}%"
-                            final_mp3 = "final_recap.mp3"
-                            asyncio.run(generate_audio_file(st.session_state.recap_script, final_mp3, voice_id, rate=final_rate, volume=volume_str))
+
+                            speed_pct = round(((audio_dur / v_dur) - 1) * 100)
+                            final_rate = f"{speed_pct:+}%"
+
+                            final_mp3 = tempfile.mktemp(suffix=".mp3")
+                            asyncio.run(generate_audio_file(
+                                st.session_state.recap_script,
+                                final_mp3, voice_id,
+                                rate=final_rate, volume=volume_str
+                            ))
+
+                            st.markdown('<div class="section-label" style="margin-top:1rem;">🎵 Preview</div>', unsafe_allow_html=True)
                             st.audio(final_mp3)
-                            f_name = st.text_input("Filename:", value="movie_recap", key="mp3_n")
+
+                            fname = st.text_input("Filename:", value="movie_recap", key="mp3_name")
                             with open(final_mp3, "rb") as f:
-                                st.download_button("📥 Download MP3", f, f"{f_name}.mp3", "audio/mpeg")
+                                st.download_button(
+                                    "📥 Download MP3",
+                                    f, f"{fname}.mp3", "audio/mpeg",
+                                    use_container_width=False
+                                )
                         except Exception as e:
-                            st.error(f"Error: {str(e)}")
+                            st.error(f"Error: {e}")
 
-        # --- TAB 2: SRT Subtitles ---
-        with tab2:
-            if st.button("🎯 Generate SRT File"):
-                with st.spinner("မြန်မာဘာသာဖြင့် အချိန်ကိုက် ဖန်တီးနေပါတယ်..."):
+    # ── TAB 2: SRT ──
+    with tab2:
+        col_btn2, _ = st.columns([1, 3])
+        with col_btn2:
+            if st.button("🎯 Generate SRT", use_container_width=True):
+                with st.spinner("🤖 Gemini က SRT ဖန်တီးနေပါတယ်..."):
                     st.session_state.srt_content = get_srt_subtitles(video_path)
-            if st.session_state.srt_content:
-                st.session_state.srt_content = st.text_area("Edit SRT:", value=st.session_state.srt_content, height=400)
-                srt_n = st.text_input("Filename:", value="subtitles", key="srt_n")
-                st.download_button("📥 Download SRT", st.session_state.srt_content, f"{srt_n}.srt", "text/plain")
 
-        # --- TAB 3: Catchy Title & Review ---
-        with tab3:
-            st.subheader("🌟 Video Title & Compelling Review")
-            if st.button("✨ Generate Title & Review"):
-                with st.spinner("နာမည်နှင့် Review ရေးနေပါတယ်..."):
+        if st.session_state.srt_content:
+            st.markdown('<div class="section-label" style="margin-top:1rem;">✏️ Edit SRT</div>', unsafe_allow_html=True)
+            st.session_state.srt_content = st.text_area(
+                "SRT Content",
+                value=st.session_state.srt_content,
+                height=350,
+                label_visibility="collapsed"
+            )
+            srt_name = st.text_input("Filename:", value="subtitles", key="srt_name")
+            st.download_button(
+                "📥 Download SRT",
+                st.session_state.srt_content,
+                f"{srt_name}.srt",
+                "text/plain"
+            )
+
+    # ── TAB 3: Title & Review ──
+    with tab3:
+        col_btn3, _ = st.columns([1, 3])
+        with col_btn3:
+            if st.button("✨ Generate Title & Review", use_container_width=True):
+                with st.spinner("🤖 Gemini က ဖန်တီးနေပါတယ်..."):
                     st.session_state.movie_review = get_movie_review_info(video_path)
-            
-            if st.session_state.movie_review:
-                st.markdown("### 🖋️ ရလဒ်")
-                st.write(st.session_state.movie_review)
-                st.info("အပေါ်က စာသားများကို ကူးယူပြီး Social Media များတွင် အသုံးပြုနိုင်ပါသည်။")
 
-        v_clip.close()
+        if st.session_state.movie_review:
+            st.markdown('<div class="section-label" style="margin-top:1rem;">🎬 Result</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="result-card">
+                <p>{st.session_state.movie_review.replace(chr(10), '<br>')}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.info("💡 အပေါ်က စာသားများကို Social Media များတွင် ကူးယူ အသုံးပြုနိုင်ပါသည်။")
+
+else:
+    # Empty state
+    st.markdown("""
+    <div style='
+        text-align:center;
+        padding:4rem 2rem;
+        background:#12121a;
+        border:2px dashed #2a2a3a;
+        border-radius:14px;
+        margin-top:1rem;
+    '>
+        <div style='font-size:3rem;margin-bottom:1rem;'>🎬</div>
+        <div style='font-family:"Bebas Neue",sans-serif;font-size:1.5rem;letter-spacing:4px;color:#e8b400;margin-bottom:0.5rem;'>
+            VIDEO တင်ပါ
+        </div>
+        <div style='color:#7070a0;font-size:0.9rem;'>
+            MP4 · MOV · AVI &nbsp;|&nbsp; Max 200MB<br>
+            Gemini 2.5 Flash ဖြင့် Script · SRT · Review ထုတ်ယူပါ
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
