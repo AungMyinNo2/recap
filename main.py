@@ -12,39 +12,31 @@ from moviepy.editor import VideoFileClip, AudioFileClip
 # --- Configuration ---
 st.set_page_config(page_title="AI Movie Recap Master", layout="wide", page_icon="🎙️")
 
-# --- API Key Rotation Logic (Randomized) ---
+# --- API Key Rotation Logic ---
 def get_model_with_rotation():
-    """Secrets ထဲက GEMINI_KEYS ကို Index ပါတွဲပြီး Random (ကျပန်း) ရွေးချယ်ပေးမည့် Function"""
     if "GEMINI_KEYS" not in st.secrets:
-        st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' (List ပုံစံ) ကို အရင်ထည့်ပေးပါ။")
+        st.error("❌ Secrets ထဲမှာ 'GEMINI_KEYS' ကို အရင်ထည့်ပေးပါ။")
         st.stop()
-    
-    # Key တစ်ခုချင်းစီကို ၎င်း၏ မူရင်းနံပါတ် (Index) နှင့် တွဲလိုက်သည် (ဥပမာ - [(1, "key1"), (2, "key2")])
     keys_with_indices = list(enumerate(st.secrets["GEMINI_KEYS"], start=1))
     random.shuffle(keys_with_indices)
     return keys_with_indices
 
-if 'recap_script' not in st.session_state:
-    st.session_state.recap_script = ""
-if 'srt_content' not in st.session_state:
-    st.session_state.srt_content = ""
-if 'movie_review' not in st.session_state:
-    st.session_state.movie_review = ""
+# --- Session States ---
+if 'recap_script' not in st.session_state: st.session_state.recap_script = ""
+if 'srt_content' not in st.session_state: st.session_state.srt_content = ""
+if 'movie_review' not in st.session_state: st.session_state.movie_review = ""
+if 'gemini_video_file' not in st.session_state: st.session_state.gemini_video_file = None
+if 'last_uploaded_file_name' not in st.session_state: st.session_state.last_uploaded_file_name = ""
 
 # --- Sidebar Settings ---
 st.sidebar.title("⚙️ Audio Settings")
-
 keys_list = st.secrets.get("GEMINI_KEYS", [])
-total_keys = len(keys_list)
-
 st.sidebar.info(f"🔑 **API System:** ကျပန်း Mode")
-st.sidebar.caption(f"စုစုပေါင်း API Key {total_keys} ခုကို Random စနစ်ဖြင့် လှည့်သုံးနေပါသည်။")
-
+st.sidebar.caption(f"စုစုပေါင်း API Key {len(keys_list)} ခုကို လှည့်သုံးနေပါသည်။")
 st.sidebar.divider()
 
 voice_choice = st.sidebar.radio("Recap ပြောမည့်သူ:", ["သီဟ", "နီလာ "])
 voice_id = "my-MM-ThihaNeural" if "သီဟ" in voice_choice else "my-MM-NilarNeural"
-
 volume_value = st.sidebar.slider("အသံ အတိုး/အလျော့ (%)", -50, 50, 0, step=10)
 volume_str = f"{volume_value:+}%"
 
@@ -54,176 +46,114 @@ async def generate_audio_file(text, output_path, voice, rate="+0%", volume="+0%"
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     await communicate.save(output_path)
 
-def get_recap_script(video_path):
-    """Ai ဖြင့် Script ထုတ်ယူခြင်း (Auto Key Rotation & Number Display)"""
+def upload_to_gemini(video_path):
+    """Video ကို Gemini ပေါ်သို့ တစ်ကြိမ်သာ တင်ပြီး အဆင်သင့်ဖြစ်အောင် စောင့်ပေးမည့် Function"""
     indexed_keys = get_model_with_rotation()
-    
     for key_no, current_key in indexed_keys:
         try:
             genai.configure(api_key=current_key.strip())
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-            
+            # Note: Model version gemini-2.5-flash (as requested to not change)
             video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Ai က Video ကို ဖတ်နေပါတယ်... (Key နံပါတ် - {key_no})")
-
-            while video_file.state.name == "PROCESSING":
-                time.sleep(2)
-                video_file = genai.get_file(video_file.name)
             
-            prompt = """
-            ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
-            စည်းကမ်းချက်-
-            ၁။ Timestamps တွေ၊ စက္ကန့်တွေ၊ မိနစ်တွေကို လုံးဝ မထည့်ပါနဲ့။ Narrative Style ပဲ ရေးပါ။
-            ၂။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပေးပါ။
-            ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပေးပါ။
-            ၄။ မြန်မာစာလုံးရေ လိုအပ်သလောက်စာလုံးရေ များများရေးနဲ့ ဇာတ်လမ်းကို ပရိသတ်စွဲမက်အောင် အကျယ်တဝင့် ရေးပေးပါ။
-            ၅။ စာသားသက်သက်ပဲ ပြန်ပေးပါ။
-            """
-            response = model.generate_content([prompt, video_file])
-            genai.delete_file(video_file.name)
-            return response.text
-            
-        except exceptions.ResourceExhausted:
-            st.warning(f"⚠️ Key နံပါတ် {key_no} Limit ပြည့်သွားပါပြီ။ နောက်တစ်ခုဖြင့် ထပ်မံကြိုးစားနေပါသည်။")
-            continue
+            with st.status(f"🤖 Ai က ဗီဒီယိုကို စတင်ဖတ်နေပါတယ်... (Key - {key_no})", expanded=True) as status:
+                while video_file.state.name == "PROCESSING":
+                    time.sleep(2)
+                    video_file = genai.get_file(video_file.name)
+                status.update(label="✅ ဗီဒီယိုဖတ်ပြီးပါပြီ။", state="complete")
+            return video_file, current_key # အောင်မြင်ရင် ပြန်ပေးမယ်
         except Exception as e:
-            st.error(f"Error with Key No. {key_no}: {str(e)}")
             continue
-            
-    st.error("❌ API Keys အားလုံး Limit ပြည့်နေပါသည် သို့မဟုတ် အလုပ်မလုပ်ပါ။")
-    st.stop()
+    return None, None
 
-def get_movie_review_info(video_path):
-    """ဗီဒီယိုအတွက် ဆွဲဆောင်မှုရှိသော အမည်နှင့် Review (Auto Key Rotation & Number Display)"""
-    indexed_keys = get_model_with_rotation()
-    
-    for key_no, current_key in indexed_keys:
-        try:
-            genai.configure(api_key=current_key.strip())
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-            
-            video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Ai က နာမည်နှင့် Review ကို စဉ်းစားနေပါတယ်... (Key နံပါတ် - {key_no})")
-
-            while video_file.state.name == "PROCESSING":
-                time.sleep(2)
-                video_file = genai.get_file(video_file.name)
-            
-            prompt = """
-            ဤဗီဒီယိုကို ကြည့်ပြီး ပရိသတ်စိတ်ဝင်စားသွားအောင် ဆွဲဆောင်မှုရှိသော မြန်မာဘာသာ ရုပ်ရှင်အမည် (Catchy Title) တစ်ခု နှင့် လူကြည့်များစေမည့် စိတ်လှုပ်ရှားဖွယ်ရာ Review တစ်ခုကို ရေးသားပေးပါ။ 
-            Title: [အမည်]
-            Review: [စာသား] ပုံစံအတိုင်း ပြန်ပေးပါ။
-            """
-            response = model.generate_content([prompt, video_file])
-            genai.delete_file(video_file.name)
-            return response.text
-        except exceptions.ResourceExhausted:
-            continue
-        except Exception:
-            continue
-    return "Error: All keys exhausted or failed."
-
-def get_srt_subtitles(video_path):
-    """Ai ဖြင့် မြန်မာဘာသာ SRT Subtitle (Auto Key Rotation & Number Display)"""
-    indexed_keys = get_model_with_rotation()
-    
-    for key_no, current_key in indexed_keys:
-        try:
-            genai.configure(api_key=current_key.strip())
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
-            
-            video_file = genai.upload_file(path=video_path)
-            st.info(f"🤖 Gemini က SRT ဖန်တီးနေပါတယ်... (Key နံပါတ် - {key_no})")
-
-            while video_file.state.name == "PROCESSING":
-                time.sleep(2)
-                video_file = genai.get_file(video_file.name)
-            
-            prompt = """
-            ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။
-            **တင်းကျပ်စွာ လိုက်နာရန် Format ညွှန်ကြားချက်:**
-            ၁။ အချိန်မှတ်ကို တိကျသော Standard SRT format အတိုင်း **HH:MM:SS,mmm --> HH:MM:SS,mmm** ပုံစံဖြင့်သာ ရေးသားပါ။
-            ၂။ **video သည် second ပိုင်းသာရှိသည့်အတွက် နာရီနေရာ (00:) လုံးဝ မကျန်ခဲ့ပါစေနှင့်။ **
-            ၃။ စက္ကန့်နှင့် မီလီစက္ကန့်ကြားတွင် **ကော်မာ (,)** ကိုသာ အသုံးပြုပါ။
-            ၄။ SRT data သက်သက်သာ ပြန်ပေးပါ။
-            """
-            response = model.generate_content([prompt, video_file])
-            genai.delete_file(video_file.name)
-            clean_srt = response.text.replace("```srt", "").replace("```", "").strip()
-            return clean_srt
-        except exceptions.ResourceExhausted:
-            continue
-        except Exception:
-            continue
-    return "Error: All keys exhausted or failed."
+def get_ai_response(video_file, api_key, prompt):
+    """Upload လုပ်ပြီးသား Video ကိုသုံးပြီး AI Response ယူရန်"""
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+        response = model.generate_content([prompt, video_file])
+        return response.text
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # --- Main UI ---
 st.title("🎙️ Movie Recap Master")
-
 v_file = st.file_uploader("Video တင်ပါ...", type=["mp4", "mov", "avi"])
 
 if v_file:
-    if v_file.size > 200 * 1024 * 1024:
-        st.error("❌ ဖိုင်ဆိုဒ်က 200MB ထက် ကြီးနေပါသည်။")
-    else:
+    # ဖိုင်အသစ်တင်တိုင်း Gemini ဆီ တစ်ခါပဲ ပို့မယ်
+    if st.session_state.last_uploaded_file_name != v_file.name:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
             tmp.write(v_file.read())
             video_path = tmp.name
-
-        v_clip = VideoFileClip(video_path)
-        v_dur = v_clip.duration  
         
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.video(v_file)
-            st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur:.2f}** စက္ကန့်")
+        gemini_file, used_key = upload_to_gemini(video_path)
+        if gemini_file:
+            st.session_state.gemini_video_file = gemini_file
+            st.session_state.current_api_key = used_key
+            st.session_state.last_uploaded_file_name = v_file.name
+            st.session_state.video_local_path = video_path # local path သိမ်းထားမယ် Duration အတွက်
+        else:
+            st.error("❌ Video Upload လုပ်ရာတွင် အမှားအယွင်းရှိနေပါသည်။")
+            st.stop()
+
+    # Video Preview and Information
+    v_clip = VideoFileClip(st.session_state.video_local_path)
+    v_dur = v_clip.duration  
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.video(v_file)
+        st.write(f"🎞 ဗီဒီယိုကြာချိန် - **{v_dur:.2f}** စက္ကန့်")
+
+    tab1, tab2, tab3 = st.tabs(["📝 Recap & Voice", "🎯 SRT Subtitles", "🎬 Catchy Title & Review"])
+
+    with tab1:
+        if st.button("📝 Generate Recap Script"):
+            with st.spinner("Script ရေးနေပါတယ်..."):
+                prompt = """
+                ဤဗီဒီယိုကို ကြည့်ပြီး စိတ်လှုပ်ရှားဖွယ် မြန်မာဘာသာ Movie Recap Script တစ်ခု ရေးပေးပါ။
+                စည်းကမ်းချက်- ၁။ Timestamps လုံးဝ မထည့်ပါနဲ့။ ၂။ စာသားကို စာပိုဒ်တဆက်တည်း ရေးပါ။ ၃။ အဆုံးမှာ 'ဗီဒီယိုလေးကို ကြိုက်နှစ်သက်ရင် အပေါင်းလေးနှိပ် အသဲလေးပေးသွားနော်' လို့ ထည့်ပါ။ ၄။ ဇာတ်လမ်းကို စိတ်ဝင်စားစရာ အကျယ်တဝင့် ရေးပါ။
+                """
+                st.session_state.recap_script = get_ai_response(st.session_state.gemini_video_file, st.session_state.current_api_key, prompt)
+
+        if st.session_state.recap_script:
+            st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=250)
+            if st.button("🚀 Generate Audio & Sync"):
+                with st.spinner("အသံဖန်တီးနေပါတယ်..."):
+                    try:
+                        mp3_temp = "temp_audio.mp3"
+                        asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
+                        audio_clip = AudioFileClip(mp3_temp)
+                        initial_dur = audio_clip.duration
+                        audio_clip.close()
+                        speed_change = round(((initial_dur / v_dur) - 1) * 100)
+                        final_mp3 = "final_recap.mp3"
+                        asyncio.run(generate_audio_file(st.session_state.recap_script, final_mp3, voice_id, rate=f"{speed_change:+}%", volume=volume_str))
+                        st.audio(final_mp3)
+                        st.download_button("📥 Download MP3", open(final_mp3, "rb"), "recap.mp3", "audio/mpeg")
+                    except Exception as e: st.error(f"Error: {str(e)}")
+
+    with tab2:
+        if st.button("🎯 Generate SRT File"):
+            with st.spinner("SRT ဖန်တီးနေပါတယ်..."):
+                prompt = """
+                ဤဗီဒီယိုကို ကြည့်ပြီး အချိန်ကိုက် မြန်မာဘာသာ SRT Subtitle ဖိုင်တစ်ခု ဖန်တီးပေးပါ။ 
+                Format: HH:MM:SS,mmm --> HH:MM:SS,mmm ပုံစံအတိအကျဖြစ်ရမည်။ SRT data သက်သက်သာ ပြန်ပေးပါ။
+                """
+                res = get_ai_response(st.session_state.gemini_video_file, st.session_state.current_api_key, prompt)
+                st.session_state.srt_content = res.replace("```srt", "").replace("```", "").strip()
+
+        if st.session_state.srt_content:
+            st.session_state.srt_content = st.text_area("Edit SRT:", value=st.session_state.srt_content, height=300)
+            st.download_button("📥 Download SRT", st.session_state.srt_content, "subtitles.srt", "text/plain")
+
+    with tab3:
+        if st.button("✨ Generate Title & Review"):
+            with st.spinner("စဉ်းစားနေပါတယ်..."):
+                prompt = "ဤဗီဒီယိုအတွက် ဆွဲဆောင်မှုရှိသော မြန်မာ Title နှင့် Review ကို 'Title: [အမည်]' 'Review: [စာသား]' ပုံစံဖြင့် ရေးပေးပါ။"
+                st.session_state.movie_review = get_ai_response(st.session_state.gemini_video_file, st.session_state.current_api_key, prompt)
         
-        tab1, tab2, tab3 = st.tabs(["📝 Recap & Voice", "🎯 SRT Subtitles", "🎬 Catchy Title & Review"])
-        
-        with tab1:
-            if st.button("📝 Generate Recap Script"):
-                with st.spinner("Script ရေးနေပါတယ်..."):
-                    st.session_state.recap_script = get_recap_script(video_path)
+        if st.session_state.movie_review:
+            st.info(st.session_state.movie_review)
 
-            if st.session_state.recap_script:
-                st.session_state.recap_script = st.text_area("Edit Script:", value=st.session_state.recap_script, height=300)
-                if st.button("🚀 Generate Audio & Sync"):
-                    with st.spinner("အသံနှုန်း ညှိနေပါတယ်..."):
-                        try:
-                            mp3_temp = "temp_audio.mp3"
-                            asyncio.run(generate_audio_file(st.session_state.recap_script, mp3_temp, voice_id))
-                            audio_clip = AudioFileClip(mp3_temp)
-                            initial_dur = audio_clip.duration
-                            audio_clip.close()
-                            speed_change = round(((initial_dur / v_dur) - 1) * 100)
-                            final_rate = f"{speed_change:+}%"
-                            final_mp3 = "final_recap.mp3"
-                            asyncio.run(generate_audio_file(st.session_state.recap_script, final_mp3, voice_id, rate=final_rate, volume=volume_str))
-                            st.audio(final_mp3)
-                            f_name = st.text_input("Filename:", value="movie_recap", key="mp3_n")
-                            with open(final_mp3, "rb") as f:
-                                st.download_button("📥 Download MP3", f, f"{f_name}.mp3", "audio/mpeg")
-                        except Exception as e:
-                            st.error(f"Error: {str(e)}")
-
-        with tab2:
-            if st.button("🎯 Generate SRT File"):
-                with st.spinner("မြန်မာဘာသာဖြင့် အချိန်ကိုက် ဖန်တီးနေပါတယ်..."):
-                    st.session_state.srt_content = get_srt_subtitles(video_path)
-            if st.session_state.srt_content:
-                st.session_state.srt_content = st.text_area("Edit SRT:", value=st.session_state.srt_content, height=400)
-                srt_n = st.text_input("Filename:", value="subtitles", key="srt_n")
-                st.download_button("📥 Download SRT", st.session_state.srt_content, f"{srt_n}.srt", "text/plain")
-
-        with tab3:
-            st.subheader("🌟 Video Title & Compelling Review")
-            if st.button("✨ Generate Title & Review"):
-                with st.spinner("နာမည်နှင့် Review ရေးနေပါတယ်..."):
-                    st.session_state.movie_review = get_movie_review_info(video_path)
-            
-            if st.session_state.movie_review:
-                st.markdown("### 🖋️ ရလဒ်")
-                st.write(st.session_state.movie_review)
-                st.info("အပေါ်က စာသားများကို ကူးယူပြီး အသုံးပြုနိုင်ပါြပီ ။")
-
-        v_clip.close()
+    v_clip.close()
